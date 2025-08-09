@@ -82,6 +82,9 @@ async function main() {
 
   fs.writeFileSync(path.join(options.output, 'config.json'), JSON.stringify(config, null, 2));
 
+  // Include plugin.lua at the root of the addon output so users can reference it via Lua.runtime.plugin
+  fs.copyFileSync(path.join(options.input, '../plugin.lua'), path.join(options.output, 'plugin.lua'));
+
   const files = walk(options.input, (file, isDirectory) => isDirectory || (file.endsWith(`.lua`)));
 
   files.forEach((file) => {

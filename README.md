@@ -21,9 +21,9 @@ To get autocompletion for the Garry's Mod Lua API in your Garry's Mod projects, 
 **First** install **Lua Language Server (LuaLS):** for your editor of choice:
 
   * [Visual Studio Code Extension](https://marketplace.visualstudio.com/items?itemName=sumneko.lua)
-  
+
   * [Neovim Configuration](https://github.com/neovim/nvim-lspconfig/blob/master/doc/configs.md#lua_ls)
-  
+
 **Then** download/install our GLua API Definitions for the Lua Language Server. This process varies depending on your editor:
 
 ### Visual Studio Code
@@ -129,6 +129,21 @@ If you cannot or do not want to use Lua Language Server:
 1. Download and unzip the latest release from [🔗 the releases page](https://github.com/luttje/glua-api-snippets/releases), it's named something like `YYYY-MM-DD_HH-MM-SS.lua.zip`
 
 2. Include or symlink the unzipped directory into your workspace
+
+## 🧩 LuaLS Plugin Support
+
+This repository now supports a LuaLS plugin for Garry's Mod. To enable the plugin:
+
+1. Ensure `plugin.lua` is present in the repository root.
+2. In your LuaLS configuration, add the following setting:
+
+```json
+"Lua.runtime.plugin": ["/absolute/path/to/your/repo/plugin.lua"]
+```
+
+Replace `/absolute/path/to/your/repo/plugin.lua` with the actual path to the plugin file.
+
+The plugin allows for advanced features such as custom hook display and Garry's Mod-specific adjustments. See [LuaLS Plugin Documentation](https://luals.github.io/wiki/plugins/) for more details.
 
 ## Contributors
 
