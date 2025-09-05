@@ -27,4 +27,13 @@ return {
 		Angle  = "Angle",
 		Entity = "Entity",
 	},
+
+	-- Map of known GMod base entity names that should be treated as "ENT" parents
+	-- If an ENT.Base is a string and matches one of these keys, we then inherit from `ENT` instead of the string
+	baseGmodMap = {
+		["base_gmodentity"] = true,
+		["base_anim"] = true,
+		["base_ai"] = true,
+		["base_nextbot"] = true,
+	},
 }

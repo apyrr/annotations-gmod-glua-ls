@@ -1,9 +1,9 @@
--- Combined LuaLS plugin for Garry's Mod Lua support
--- Implements behaviors from:
--- 1) https://github.com/luttje/glua-api-snippets (plugin.lua)
+-- Combined LuaLS plugin for Garry's Mod
+-- Uses code from:
+-- 1) https://github.com/TIMONz1535/glua-api-snippets/tree/plugin-wip1 (plugin.lua)
 -- 2) https://github.com/CFC-Servers/luals_gmod_include (plugin.lua)
+-- Adds: Proper Include Paths,
 
--- Dependencies provided by LuaLS plugin environment
 local guide = require "parser.guide"
 local helper = require "plugins.astHelper"
 local fs = require("bee.filesystem")
@@ -25,7 +25,90 @@ local function uriExists(uri)
 	return exists
 end
 
--- Default scripted scopes; can be overridden via plugin.config.lua
+-- Simple file read helper for file:/// URIs
+local function readUriText(uri)
+	local path = uri:sub(8)
+	local f, err = io.open(path, "r")
+	if not f then
+		return nil
+	end
+	local content = f:read("*a")
+	f:close()
+	return content
+end
+
+local folderBaseCache = {}
+
+-- Attempt to find <GLOBAL>.Base inside the class folder (shared/init files)
+-- Returns a table { kind = "ident"|"string", value = string } or nil
+local function findFolderBase(uri, global, class)
+	-- Determine calling directory and filename
+	local callingDir = uri:match("^(.*)/[^/]*$")
+	if not callingDir then
+		return nil
+	end
+	local fileName = uri:match("[^/]+$") or ""
+	fileName = fileName:lower()
+
+	-- Decide whether this file is part of a folder-based class
+	local commonHub = {
+		["shared.lua"] = true,
+		["init.lua"] = true,
+		["cl_init.lua"] = true,
+	}
+
+	local folderPath
+	if commonHub[fileName] then
+		folderPath = callingDir
+	else
+		-- If parent directory name equals class, treat dir as class folder
+		local parentName = callingDir:match("([^/]+)$")
+		if parentName and parentName == class then
+			folderPath = callingDir
+		else
+			return nil
+		end
+	end
+
+	-- Use cache key = folderPath
+	local cached = folderBaseCache[folderPath]
+	if cached ~= nil then
+		return cached
+	end
+
+	-- Default files to check for
+	local candidates = {
+		folderPath .. "/shared.lua",
+		folderPath .. "/init.lua",
+		folderPath .. "/cl_init.lua",
+	}
+
+	for _, c in ipairs(candidates) do
+		if uriExists(c) then
+			local txt = readUriText(c)
+			if txt then
+				local ident = txt:match(global .. "%..-%s*Base%s*=%s*([%a_][%w_%.]*)")
+				if ident then
+					local res = { kind = "ident", value = ident }
+					folderBaseCache[folderPath] = res
+					return res
+				end
+				local s = txt:match(global .. "%..-%s*Base%s*=%s*[\"']([^\"']+)[\"']")
+				if s then
+					local res = { kind = "string", value = s }
+					folderBaseCache[folderPath] = res
+					return res
+				end
+			end
+		end
+	end
+
+	-- No base found
+	folderBaseCache[folderPath] = nil
+	return nil
+end
+
+-- Default scopes, can be overridden via plugin.config.lua, only here incase of missing config
 local defaultScriptedScopes = {
 	{ global = "ENT",    folder = "entities" },
 	{ global = "SWEP",   folder = "weapons" },
@@ -33,7 +116,7 @@ local defaultScriptedScopes = {
 	{ global = "TOOL",   folder = "weapons/gmod_tool/stools" },
 }
 
--- Optional user configuration loaded from plugin.config.lua in the same directory
+-- Load from plugin.config.lua
 local pluginConfig --[[@type table|false|nil]]
 
 --- Get directory path to this plugin file
@@ -56,7 +139,7 @@ local function getPluginDir()
 	return src:match("^(.*)/[^/]*$")
 end
 
---- Attempt to load plugin.config.lua once
+--- Attempt to load plugin.config.lua
 --- @return table|nil
 local function loadConfig()
 	if pluginConfig ~= nil then
@@ -87,7 +170,7 @@ local function getScopes()
 	return defaultScriptedScopes
 end
 
---- Datatable types mapping for NetworkVar helpers (configurable)
+--- Default NetworkVar type mapping, can be overridden via plugin.config.lua, only here incase of missing config
 local defaultDtTypes = {
 	String = "string",
 	Bool   = "boolean",
@@ -114,15 +197,40 @@ local function getDtTypes()
 	return merged
 end
 
+--- Default entity bases, can be overridden via plugin.config.lua, only here incase of missing config
+--- This is used to determine if we should inherit an entity from ENT instead of the literal string used for the base class
+local defaultBaseGmodMap = {
+	["base_gmodentity"] = true,
+	["base_anim"] = true,
+	["base_ai"] = true,
+	["base_nextbot"] = true,
+}
+
+--- Get configured baseGmodMap or fall back to defaults; merge (config wins)
+--- @return table<string, boolean>
+local function getBaseGmodMap()
+	local cfg = loadConfig()
+	local merged = {}
+	for k, v in pairs(defaultBaseGmodMap) do merged[k] = v end
+	if cfg and type(cfg.baseGmodMap) == "table" then
+		for k, v in pairs(cfg.baseGmodMap) do
+			if type(k) == "string" and (v == true or v == false) then
+				merged[k:lower()] = v
+			end
+		end
+	end
+	return merged
+end
+
 --- Detect the scripted class context based on URI
 --- @param uri string
 --- @return string? global, string? class
 local function GetScopedClass(uri)
-	-- Normalize slashes; keep original for class extraction (case-sensitive)
+	-- Fix slashes
 	local uriPath = uri:gsub("\\", "/")
 	local normUri = uriPath:lower()
 
-	-- Split path into segments for robust backwards matching
+	-- Split path into segments (each slash)
 	local segments = {}
 	for seg in normUri:gmatch("[^/]+") do
 		segments[#segments + 1] = seg
@@ -130,7 +238,7 @@ local function GetScopedClass(uri)
 
 	if #segments == 0 then return end
 
-	-- Preprocess scope folders into segment arrays
+	-- Scope each folder into its relevant segments
 	local scopes = {}
 	for _, sc in ipairs(getScopes()) do
 		local folder = (sc.folder or ""):gsub("\\", "/"):gsub("/+", "/"):lower()
@@ -149,8 +257,8 @@ local function GetScopedClass(uri)
 	for _, sc in ipairs(scopes) do
 		local fsegs = sc.segs
 		local flen = #fsegs
-		-- Scan from end backwards for the first occurrence of the full sequence
-		for i = #segments - flen, 1, -1 do
+		-- start from (#segments - flen + 1) to include last valid position
+		for i = #segments - flen + 1, 1, -1 do
 			local match = true
 			for j = 1, flen do
 				if segments[i + j - 1] ~= fsegs[j] then
@@ -163,7 +271,7 @@ local function GetScopedClass(uri)
 				if not best or endIndex > best.endIndex or (endIndex == best.endIndex and flen > best.len) then
 					best = { global = sc.global, endIndex = endIndex, len = flen }
 				end
-				break -- nearest from end found for this scope
+				break -- Stop after first (nearest) match
 			end
 		end
 	end
@@ -180,18 +288,8 @@ local function GetScopedClass(uri)
 		-- Single file directly under scope folder: <class>.lua
 		class = lastSeg:gsub("%.lua$", "")
 	else
-		-- Inside a class directory; typical filenames: init.lua, cl_init.lua, shared.lua
-		local commonHub = {
-			["init.lua"] = true,
-			["cl_init.lua"] = true,
-			["shared.lua"] = true,
-		}
-		if commonHub[lastSeg] then
-			class = segments[afterIdx]
-		else
-			-- Any other nested file still belongs to the first directory after the scope
-			class = segments[afterIdx]
-		end
+		-- Any other nested file belongs to the first directory after the scope
+		class = segments[afterIdx]
 	end
 
 	if class and class ~= "" then
@@ -214,20 +312,67 @@ function OnSetText(uri, text)
 
 	-- Localize scripted table (ENT/SWEP/EFFECT/TOOL) uniquely per file and declare its class
 	local global, class = GetScopedClass(uri)
-	if global and class then
-		-- Explicit class inheritance and a fresh local table for this file's object
-		diffs[#diffs + 1] = {
-			start = 1,
-			finish = 0,
-			text = ("---@class %s : %s\nlocal %s = {}\n\n"):format(class, global, global),
-		}
-	elseif global then
-		-- Fallback: still provide a local table to avoid polluting globals
-		diffs[#diffs + 1] = {
-			start = 1,
-			finish = 0,
-			text = ("local %s = {}\n\n"):format(global),
-		}
+	if global then
+		-- If the file already declares a local <GLOBAL>, don't inject another one.
+		local localPattern = "%f[%a]local%s+" .. global .. "%s*="
+		local hasLocal = string.find(text, localPattern) ~= nil
+
+		-- Prefer a folder-wide Base (shared.lua) when present
+		local folderBase = findFolderBase(uri, global, class)
+		local baseIdent, baseString
+		if folderBase then
+			if folderBase.kind == "ident" then
+				baseIdent = folderBase.value
+			else
+				baseString = folderBase.value
+			end
+		else
+			-- Detect <GLOBAL>.Base assignments in the current file. Prefer identifier (variable) matches
+			baseIdent = text:match(global .. "%.%s*Base%s*=%s*([%a_][%w_%.]*)")
+			baseString = text:match(global .. "%.%s*Base%s*=%s*[\"']([^\"']+)[\"']")
+		end
+
+		local parent = global
+		local localText = ""
+		if baseIdent then
+			parent = baseIdent
+			if not hasLocal then
+				-- Use the identifier as the local table so the file refers to the base variable
+				localText = ("local %s = %s\n\n"):format(global, baseIdent)
+			end
+		elseif baseString then
+			-- If the base is a known GMod base class name, treat it as ENT
+			local baseMap = getBaseGmodMap()
+			if baseMap[baseString:lower()] then
+				parent = global
+			else
+				parent = baseString
+			end
+			if not hasLocal then
+				-- Can't reliably map a string base to a variable here; keep a fresh table
+				localText = ("local %s = {}\n\n"):format(global)
+			end
+		else
+			if not hasLocal then
+				localText = ("local %s = {}\n\n"):format(global)
+			end
+		end
+
+		if class then
+			diffs[#diffs + 1] = {
+				start = 1,
+				finish = 0,
+				text = ("---@class %s : %s\n%s"):format(class, parent, localText),
+			}
+		else
+			if localText ~= "" then
+				diffs[#diffs + 1] = {
+					start = 1,
+					finish = 0,
+					text = localText,
+				}
+			end
+		end
 	end
 
 	-- Replace DEFINE_BASECLASS preprocessor with a resolvable Lua form
@@ -250,8 +395,6 @@ function OnSetText(uri, text)
 	end
 	return diffs
 end
-
--- Datatable types are now resolved via getDtTypes() (configurable)
 
 --- Bind NetworkVar/NetworkVarElement getters/setters to the class in AST
 --- @param ast any
@@ -326,12 +469,55 @@ function OnTransformAst(uri, ast)
 	end
 
 	-- First local statement should be the scripted global we injected above
-	local classNode = ast[1]
-	if not (classNode and classNode.type == "local" and guide.getKeyName(classNode) == global) then
+	local function findClassNode(tbl, wanted)
+		if type(tbl) ~= "table" then return nil end
+		-- Try numeric sequence part first (1..#tbl)
+		for i = 1, #tbl do
+			local n = tbl[i]
+			if n and n.type == "local" and guide.getKeyName(n) == wanted then
+				return n
+			end
+		end
+
+		-- Fallback: full table scan (covers string keys like "001", "002")
+		for _, n in pairs(tbl) do
+			if n and type(n) == "table" and n.type == "local" and guide.getKeyName(n) == wanted then
+				return n
+			end
+		end
+
+		return nil
+	end
+
+	local classNode = findClassNode(ast, global)
+	if not classNode then
 		return
 	end
 
 	local group = {}
+	-- Ensure the class doc is attached to the AST
+	local ok = helper.addClassDoc and helper.addClassDoc(ast, classNode, class .. ": " .. global, group)
+	if not ok then
+		-- If addClassDoc isn't available or failed, continue but abort if it explicitly returned false
+		if ok == false then
+			return
+		end
+	end
+
+	-- Detect calls that occur inside SetupDataTables, even when wrapped in local helper functions
+	local function isInsideSetupDataTables(node)
+		local p = node
+		for i = 1, 12 do
+			if not p or not p.parent then
+				break
+			end
+			p = p.parent
+			if guide.getKeyName(p) == "SetupDataTables" then
+				return true
+			end
+		end
+		return false
+	end
 
 	ok = guide.eachSourceType(ast, "call", function(source)
 		local targetMethod = source.node
@@ -339,7 +525,7 @@ function OnTransformAst(uri, ast)
 		if targetName ~= "NetworkVar" and targetName ~= "NetworkVarElement" then
 			return
 		end
-		if guide.getKeyName(source.parent.parent) ~= "SetupDataTables" then
+		if not isInsideSetupDataTables(source) then
 			return
 		end
 		local targetSelf = targetMethod.node and guide.getSelfNode(targetMethod.node)
@@ -354,19 +540,6 @@ function OnTransformAst(uri, ast)
 	end
 
 	return ast
-end
-
--- Keep VM table safe even if not defined by host
-VM = VM or {}
--- Provide a safe default for OnCompileFunctionParam; some LuaLS versions call this unconditionally
-if VM.OnCompileFunctionParam == nil then
-	---@param next fun(func:any, param:any)
-	---@param func any
-	---@param param any
-	---@return boolean|nil
-	function VM.OnCompileFunctionParam(next, func, param)
-		return false
-	end
 end
 
 --- Custom require() resolver for GMod include patterns (.lua only)
