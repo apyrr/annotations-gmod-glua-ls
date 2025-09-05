@@ -12,9 +12,7 @@ export type Metadata = {
 }
 
 export async function writeMetadata(url: string, outputDirectory: string): Promise<Metadata> {
-  // Fix: Don't use path.join for URLs, use string concatenation
-  const recentChangesUrl = url.endsWith('/') ? url + '~recentchanges' : url + '/~recentchanges';
-  const results = await scrapeAndCollect(new WikiHistoryPageScraper(recentChangesUrl));
+  const results = await scrapeAndCollect(new WikiHistoryPageScraper(url + '/~recentchanges'));
   const exists = promisify(fs.exists);
   const lastUpdate = results[0].history[0].dateTime;
 
