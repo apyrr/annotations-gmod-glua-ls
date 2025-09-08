@@ -1,4 +1,4 @@
-name: release
+name: release-test
 on:
   workflow_dispatch:
   push:
@@ -27,7 +27,9 @@ jobs:
           if [ "$RUNNER_DEBUG" = "1" ]; then
             exit 1
           else
-            npm run wiki-check-changed $(git tag -l --sort=-v:refname)
+            # always pass a value even if there are no tags
+            tags=$(git tag -l --sort=-v:refname)
+            npm run wiki-check-changed "$tags"
           fi
       - name: Install zip
         if: ${{ steps.wiki_confirm_no_changes.outcome == 'failure' }}
@@ -45,6 +47,9 @@ jobs:
       - name: Pack release
         if: ${{ steps.wiki_confirm_no_changes.outcome == 'failure' }}
         run: npm run pack-release
+      - name: Publish Lua Language Server Library
+        if: ${{ steps.wiki_confirm_no_changes.outcome == 'failure' }}
+        run: npm run publish-library
       - name: Get release files and version
         if: ${{ steps.wiki_confirm_no_changes.outcome == 'failure' }}
         id: release_json
@@ -58,22 +63,66 @@ jobs:
           echo "releaseJson<<EOF" >> $GITHUB_OUTPUT
           echo "${content}" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+      - name: Generate next tag
+        if: ${{ steps.wiki_confirm_no_changes.outcome == 'failure' }}
+        id: next_tag
+        run: |
+          # Ensure we have remote tags
+          git fetch --tags origin || true
 
+          # Find latest vNNNN tag locally (if any)
+          lastTag=$(git tag -l --sort=-v:refname | grep -E "^v[0-9]{4}$" | head -n 1 || true)
+          if [ -z "$lastTag" ]; then
+            candidate=1
+          else
+            lastNum=${lastTag:1}
+            candidate=$(( 10#$lastNum + 1 ))
+          fi
+
+          # Loop until we find a tag that does not exist locally nor on the remote
+          while true; do
+            newTag=$(printf "v%04d" $candidate)
+
+            # check remote
+            if git ls-remote --exit-code --tags origin "$newTag" >/dev/null 2>&1; then
+              candidate=$((candidate+1))
+              continue
+            fi
+
+            # check local
+            if git rev-parse -q --verify "refs/tags/$newTag" >/dev/null 2>&1; then
+              candidate=$((candidate+1))
+              continue
+            fi
+
+            break
+          done
+
+          echo "newTag=$newTag" >> $GITHUB_OUTPUT
       - name: Create plugin asset
         if: ${{ steps.wiki_confirm_no_changes.outcome == 'failure' }}
         id: create_plugin_asset
         run: |
           mkdir -p dist/release
-          # get existing releaseFiles from release.json (comma separated)
-          releaseFiles=$(node -e "const r=require('./dist/release/release.json'); console.log((r.releaseFiles||[]).join(','))")
-          plugin_file=""
-          if [ -d dist/libraries/garrysmod ]; then
-            version="${{ fromJson(steps.release_json.outputs.releaseJson).version }}"
-            plugin_file="dist/release/${version}.plugin.zip"
-            (cd dist/libraries/garrysmod && zip -r ../../release/${version}.plugin.zip .)
+          releaseFiles=$(node -e "const r=require('./dist/release/release.json'); process.stdout.write((r.releaseFiles||[]).join(','))")
+          version="${{ fromJson(steps.release_json.outputs.releaseJson).version }}"
+
+          # Derive a safe base name: prefer first release file stem, else sanitize version
+          if [ -n "$releaseFiles" ]; then
+            firstFile=$(echo "$releaseFiles" | cut -d',' -f1)
+            baseName=$(basename "$firstFile")
+            baseName=${baseName%%.*} # strip extension parts (.json.zip/.lua.zip)
+          else
+            baseName=$(echo "$version" | tr ' /:' '__-' | sed 's/[^A-Za-z0-9._-]/_/g')
           fi
 
-          if [ -n "$plugin_file" ] && [ -f "$plugin_file" ]; then
+          plugin_file="dist/release/${baseName}.plugin.zip"
+
+          if [ -d dist/libraries/garrysmod ]; then
+            (cd dist/libraries/garrysmod && zip -qr "$(pwd)/../../release/${baseName}.plugin.zip" .)
+          fi
+
+          if [ -f "$plugin_file" ]; then
             if [ -z "$releaseFiles" ]; then
               combined="$plugin_file"
             else
@@ -81,10 +130,13 @@ jobs:
             fi
           else
             combined="$releaseFiles"
+            echo "Plugin file was not created; continuing without it." >&2
           fi
 
-          echo "releaseArtifacts=${combined}" >> $GITHUB_OUTPUT
-
+          combined=$(echo "$combined" | tr -d '\n' | sed 's/ //g')
+          echo "Artifacts to upload: $combined"
+          [ -z "$combined" ] && echo "No artifacts detected for release." >&2
+          echo "releaseArtifacts=$combined" >> $GITHUB_OUTPUT
       - name: Create release
         if: ${{ steps.wiki_confirm_no_changes.outcome == 'failure' }}
         id: create_release
@@ -92,46 +144,70 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           name: ${{ fromJson(steps.release_json.outputs.releaseJson).version }}
-          tag: ${{ fromJson(steps.release_json.outputs.releaseJson).version }}
-          prerelease: ${{ github.ref_name == 'test' }}
+          tag: ${{ steps.next_tag.outputs.newTag }}
+          prerelease: ${{ startsWith(github.ref_name, 'test') }}
           body: |
             # 📅 ${{ fromJson(steps.release_json.outputs.releaseJson).version }}
-            This release was automatically generated by [this GitHub Action Workflow](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/release.yml).
+            This release was automatically generated by [this GitHub Action Workflow](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/release-test.yml).
 
             ## 📝 Attached Archives
             With this release the following archives are attached:
-            - `*.lua.zip`: Annotations for Lua definitions to include in your workspace (e.g: for EmmyLua)
-            - `*.json.zip`: JSON definitions based on the Wiki contents (can be used for further processing)
-            - `*.plugin.zip`: Plugin archive containing the library files for this release (packaged from the lua-language-server-addon branch contents).
+            - "*.lua.zip": Annotations for Lua definitions to include in your workspace (e.g. EmmyLua)
+            - "*.json.zip": JSON definitions based on the Wiki contents (can be used for further processing)
+            - "*.plugin.zip": Plugin archive containing the library files for this release (packaged from the lua-language-server-addon branch contents).
 
           artifacts: ${{ steps.create_plugin_asset.outputs.releaseArtifacts }}
-      - name: Publish Lua Language Server Library
-        if: ${{ steps.wiki_confirm_no_changes.outcome == 'failure' }}
-        run: npm run publish-library
       - name: Copy library to it's own branch
         if: ${{ steps.wiki_confirm_no_changes.outcome == 'failure' }}
         env:
           LIBRARY_PATH: dist/libraries/garrysmod
           TARGET_BRANCH: lua-language-server-addon
+          NEW_TAG: ${{ steps.next_tag.outputs.newTag }}
         run: |
-          libraryPathFirstPart=`echo $LIBRARY_PATH | cut -d'/' -f1`
-
+          set -e
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
 
-          # Checkout the target branch, create it if it doesn't exist
+          # Top-level directory we should preserve ("dist") so we don't delete the library before copying
+          libraryPathFirstPart="$(echo "$LIBRARY_PATH" | cut -d'/' -f1)"
+
+          if [ ! -d "$LIBRARY_PATH" ] || [ -z "$(ls -A "$LIBRARY_PATH" 2>/dev/null)" ]; then
+            echo "No library files found at $LIBRARY_PATH — skipping branch publish."
+            exit 0
+          fi
+
+          git fetch origin --prune || true
+          # Checkout (create if needed) target branch
           git checkout $TARGET_BRANCH 2>/dev/null || git checkout -b $TARGET_BRANCH
 
-          # Remove all files except .git and the library files
-          rm -rf $(ls -A | grep -vE ".git$|^$libraryPathFirstPart$")
-          mv $LIBRARY_PATH/* .
-          rm -rf $libraryPathFirstPart
+          # Remove everything except .git and the preserved top directory containing our library
+          # (mirrors logic in original upstream workflow)
+          toRemove=$(ls -A | grep -vE ".git$|^${libraryPathFirstPart}$") || true
+          if [ -n "$toRemove" ]; then
+            echo "Removing old branch contents (except ${libraryPathFirstPart})"
+            rm -rf $toRemove
+          fi
 
-          # Commit these changes
+          # Move library contents into branch root
+            mv "$LIBRARY_PATH"/* .
+          # Clean up leftover dist directory (we only need raw library files in branch)
+          rm -rf "$libraryPathFirstPart"
+
           git add -A
-          git diff-index --quiet HEAD || git commit -am "🚀 Update ${{ fromJson(steps.release_json.outputs.releaseJson).version }}"
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "🚀 Update ${{ fromJson(steps.release_json.outputs.releaseJson).version }}" || true
+          else
+            echo "No changes to commit."; exit 0
+          fi
 
-          # Push the branch (no tags)
-          git push origin $TARGET_BRANCH
+          # Tag if it doesn't already exist
+          if ! git rev-parse -q --verify "refs/tags/$NEW_TAG" >/dev/null 2>&1; then
+            git tag "$NEW_TAG" || true
+          else
+            echo "Tag $NEW_TAG already exists; skipping tag creation."
+          fi
+
+          git push origin $TARGET_BRANCH || true
+          git push origin "$NEW_TAG" || true
 
         # NOTE: From here on the workflow repo no longer contains the dist files, nor node_modules (removed when publishing branch)
