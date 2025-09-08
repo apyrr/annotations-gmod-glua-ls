@@ -2,4 +2,9 @@
   "Lua.workspace.library": [
     "dist/libraries/garrysmod"
   ],
+  "Lua.workspace.ignoreDir": [
+    ".vscode",
+    "output",
+    "dist"
+  ],
 }

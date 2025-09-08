@@ -36,4 +36,15 @@ return {
 		["base_ai"] = true,
 		["base_nextbot"] = true,
 	},
+
+	-- Optional: override AccessorFunc FORCE_* mappings used to type Set*/Get*
+	-- Keys are FORCE_* enum names; values are LuaLS types
+	accessorForceTypes = {
+		FORCE_STRING = "string",
+		FORCE_NUMBER = "number",
+		FORCE_BOOL   = "boolean",
+		FORCE_ANGLE  = "Angle",
+		FORCE_COLOR  = "Color",
+		FORCE_VECTOR = "Vector",
+	},
 }
