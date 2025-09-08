@@ -56,7 +56,6 @@ export class GluaApiWriter {
   // This fixes things like Panels not having PANEL hooks defined
   private readonly classAliases: Map<string, string[]> = new Map([
     ['Panel', ['PANEL']],
-    ['Player', ['PLAYER']],
     ['Entity', ['ENTITY']],
     ['Weapon', ['WEAPON']],
     ['Vehicle', ['VEHICLE']],
