@@ -4,11 +4,7 @@
 
 local Defaults = {}
 
--- Default cache configuration
-Defaults.cache = {
-	maxSize = 1000,
-	defaultTtl = 300000 -- 5 minutes in milliseconds
-}
+
 
 -- Default scope configurations with integrated folder detection patterns
 Defaults.scopes = {

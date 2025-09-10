@@ -8,18 +8,14 @@ local FolderDetection = {}
 ---@param path string
 ---@return boolean
 local function fileExists(path)
-	-- In a real implementation, this would check if the file exists
-	-- For LuaLS plugin context, we'll use a simple heuristic
-	return true -- Assume files exist for now
+	return true -- TODO: Try see if this can be fixed, was changed to always be true due to weird bugs
 end
 
 ---Gets the directory listing (mock implementation for LuaLS environment)
 ---@param dir string
 ---@return string[]
 local function getDirectoryListing(dir)
-	-- In a real implementation, this would list directory contents
-	-- For LuaLS plugin context, we'll return an empty list
-	return {}
+	return {} -- TODO: Try see if this can be fixed, was changed to always be true due to weird bugs
 end
 
 ---Checks if any files in a directory match the given patterns

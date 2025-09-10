@@ -1,25 +1,27 @@
 --[[
-	LuaLS plugin for Garry's Mod
+	--[[
+		LuaLS plugin for Garry's Mod
 
-	Includes code from https://github.com/TIMONz1535/glua-api-snippets/tree/plugin-wip1
-	Includes code from https://github.com/CFC-Servers/luals_gmod_include
+		Includes code from https://github.com/TIMONz1535/glua-api-snippets/tree/plugin-wip1
+		Includes code from https://github.com/CFC-Servers/luals_gmod_include
 
-	This started as a project to combine both but ended up adding a bunch of new things and making a few fixes. It currently has:
+		This started as a project to combine both but ended up adding a bunch of new things and making a few fixes. It currently has:
 
-	- Proper Include Paths resolution
-	- Scripted Class Detection (ENT, SWEP, EFFECT, TOOL) with automated class annotation and inheritance detection
-	- Derma Class automated annotation with inheritance detection
-	- NetworkVar getter/setter annotation with proper type inference
-	- AccessorFunc getter/setter annotation with force type support
-	- Various fixes with class + hook inheritence (e.g PANEL and Panel caused issues)
-	- plugin.config.lua to configure some stuff easily
+		- Include Paths resolution
+		- Scripted Class Detection (ENT, SWEP, EFFECT, TOOL) with automated class annotation and inheritance detection
+		- DEFINE_BASECLASS processing
+		- Derma Class automated annotation with inheritance detection
+		- NetworkVar getter/setter annotation with type support
+		- AccessorFunc getter/setter annotation with type support
+		- Various fixes with class + hook inheritence (e.g PANEL and Panel caused issues)
+		- config.lua to configure some stuff easily
+	--]]
 
-	Potential issues:
-	- Performance, as I've not benchmarked this at all. It seems okay, or at least not noticeable compared to how LuaLS is normally for me.
---]]
-
-local guide = require "parser.guide"
-local helper = require "plugins.astHelper"
+local util = require("utility")
+local client = require("client")
+local log = require("log")
+local guide = require("parser.guide")
+local helper = require("plugins.astHelper")
 local fs = require("bee.filesystem")
 
 local Defaults = require("plugin.defaults")
@@ -27,87 +29,7 @@ local FolderDetection = require("plugin.folder-detection")
 local DermaProcessor = require("plugin.derma-processor")
 local AccessorProcessor = require("plugin.accessor-processor")
 local NetworkVarProcessor = require("plugin.networkvar-processor")
-
---[[
-	Cache Management Module
-
-	Provides centralized cache management with size limits to prevent memory leaks.
-	Supports multiple cache types with automatic cleanup when limits are exceeded.
---]]
-local CacheManager = {}
-local caches = {
-	uriExists = {},
-	folderBase = {},
-	config = nil -- Special case for config caching
-}
-
--- Cache size limits to prevent memory leaks
-local CACHE_LIMITS = {
-	uriExists = 1000,
-	folderBase = 100
-}
-
----Clears a specific cache or all caches
----@param cacheName? string
-function CacheManager.clear(cacheName)
-	if cacheName then
-		if caches[cacheName] then
-			if type(caches[cacheName]) == "table" then
-				for k in pairs(caches[cacheName]) do
-					caches[cacheName][k] = nil
-				end
-			else
-				caches[cacheName] = nil
-			end
-		end
-	else
-		-- Clear all caches
-		for name in pairs(caches) do
-			CacheManager.clear(name)
-		end
-	end
-end
-
----Manages cache size by removing oldest entries when limit is exceeded
----@param cacheName string
-local function manageCacheSize(cacheName)
-	local cache = caches[cacheName]
-	local limit = CACHE_LIMITS[cacheName]
-	if not cache or not limit then return end
-
-	local count = 0
-	for _ in pairs(cache) do
-		count = count + 1
-	end
-
-	if count > limit then
-		-- Simple strategy: clear half the cache
-		local toRemove = math.floor(count / 2)
-		local removed = 0
-		for k in pairs(cache) do
-			cache[k] = nil
-			removed = removed + 1
-			if removed >= toRemove then break end
-		end
-	end
-end
-
----@param uri string
----@return boolean
-local function uriExists(uri)
-	local cache = caches.uriExists
-	local cached = cache[uri]
-	if cached ~= nil then
-		return cached
-	end
-
-	local path = uri:sub(8)
-	local exists = fs.exists(path)
-	cache[uri] = exists
-
-	manageCacheSize("uriExists")
-	return exists
-end
+local ScriptedClass = require("plugin.scripted-class")
 
 -- Error Handling Utilities Module
 local ErrorHandler = {}
@@ -119,42 +41,43 @@ local ErrorHandler = {}
 function ErrorHandler.safeCall(func, context)
 	local ok, result = pcall(func)
 	if not ok then
-		-- In a real plugin, you might want to log this to a file or debug console
-		-- For now, we'll just return the error
+		log.error(context, tostring(result), util.dump(client.info.clientInfo))
 		return nil, string.format("Error in %s: %s", context, tostring(result))
 	end
 	return result, nil
 end
 
--- Use defaults from the Defaults module
+-- Use defaults from the Defaults module, mostly as fallback in-case config is missing stuff
 local defaultScriptedScopes = Defaults.scopes
 
 --[[
-	Configuration Management Module
+		Configuration Management Module
 
-	Handles loading and merging of plugin configuration from plugin.config.lua.
-	Provides type-safe configuration access with validation and default fallbacks.
---]]
+		Handles loading and merging of plugin configuration from config.lua.
+		Provides type-safe configuration access with validation and default fallbacks.
+		TODO: Just return the config table and change everything to use that, most of this is not required
+	--]]
 local ConfigManager = {}
 
-
+-- Simple config cache
+local configCache = nil
 
 ---@return table|nil
 local function loadConfig()
-	if caches.config ~= nil then
-		return caches.config or nil
+	if configCache ~= nil then
+		return configCache or nil
 	end
-	-- Use standard require for plugin config; simpler and follows KISS.
+
 	local cfg = ErrorHandler.safeCall(function()
-		return require("plugin.config")
+		return require("config")
 	end, "loadConfig")
 
 	if cfg and type(cfg) == "table" then
-		caches.config = cfg
+		configCache = cfg
 		return cfg
 	end
 
-	caches.config = false
+	configCache = false
 	return nil
 end
 
@@ -193,7 +116,6 @@ function ConfigManager.getScopes()
 	return defaultScriptedScopes
 end
 
--- Use defaults from the Defaults module
 local defaultDtTypes = Defaults.dtTypes
 local defaultAccessorForceTypes = Defaults.accessorForceTypes
 
@@ -258,188 +180,7 @@ function ConfigManager.getConfig()
 	}
 end
 
---[[
-	Pattern Matching Utilities Module
-
-	Provides reusable pattern matching functions for parsing Garry's Mod Lua code.
-	Handles vgui.Register, derma.DefineControl, AccessorFunc calls, and variable assignments.
---]]
-local PatternUtils = {}
-
--- Common patterns used throughout the plugin
-local PATTERNS = {
-	VGUI_REGISTER_WITH_BASE =
-	"vgui%s*%.%s*Register%s*%(%s*['\"]([^'\"]+)['\"]%s*,%s*([%a_][%w_]*)%s*,%s*['\"]([^'\"]+)['\"]%s*%)",
-	VGUI_REGISTER_NO_BASE = "vgui%s*%.%s*Register%s*%(%s*['\"]([^'\"]+)['\"]%s*,%s*([%a_][%w_]*)%s*%)",
-	DERMA_DEFINE_WITH_BASE =
-	"derma%s*%.%s*DefineControl%s*%(%s*['\"]([^'\"]+)['\"]%s*,%s*['\"][^'\"]*['\"]%s*,%s*([%a_][%w_]*)%s*,%s*['\"]([^'\"]+)['\"]%s*%)",
-	DERMA_DEFINE_NO_BASE =
-	"derma%s*%.%s*DefineControl%s*%(%s*['\"]([^'\"]+)['\"]%s*,%s*['\"][^'\"]*['\"]%s*,%s*([%a_][%w_]*)%s*%)",
-	ACCESSOR_FUNC_WITH_FORCE =
-	"AccessorFunc%s*%(%s*([%a_][%w_]*)%s*,%s*['\"]([^'\"]+)['\"]%s*,%s*['\"]([^'\"]+)['\"]%s*,%s*([%a_][%w_]*)%s*%)",
-	ACCESSOR_FUNC_NO_FORCE = "AccessorFunc%s*%(%s*([%a_][%w_]*)%s*,%s*['\"]([^'\"]+)['\"]%s*,%s*['\"]([^'\"]+)['\"]%s*%)",
-	LOCAL_VAR_ASSIGNMENT = "()local%s+([%a_][%w_]*)%s*=%s*%b{}()",
-	GLOBAL_VAR_ASSIGNMENT = "([%a_][%w_]*)%s*=%s*%b{}",
-	BASE_ASSIGNMENT_IDENT = "%.%s*Base%s*=%s*([%a_][%w_%.]*)",
-	BASE_ASSIGNMENT_STRING = "%.%s*Base%s*=%s*[\"']([^\"']+)[\"']"
-}
-
----Finds all matches of a pattern in text and returns structured results
----@param text string
----@param pattern string
----@param captureNames string[]
----@return table[]
-function PatternUtils.findAllMatches(text, pattern, captureNames)
-	local matches = {}
-	local pos = 1
-
-	while true do
-		local captures = { string.find(text, pattern, pos) }
-		if not captures[1] then break end
-
-		local match = {
-			start = captures[1],
-			finish = captures[2]
-		}
-
-		-- Add named captures
-		for i, name in ipairs(captureNames) do
-			match[name] = captures[i + 2]
-		end
-
-		matches[#matches + 1] = match
-		pos = captures[2] + 1
-	end
-
-	return matches
-end
-
----Finds vgui.Register calls in text
----@param text string
----@return table[]
-function PatternUtils.findVguiRegisters(text)
-	local registers = {}
-
-	-- Find registers with base class
-	local withBase = PatternUtils.findAllMatches(text, PATTERNS.VGUI_REGISTER_WITH_BASE,
-		{ "className", "varName", "baseName" })
-	for _, match in ipairs(withBase) do
-		match.type = "vgui.Register"
-		match.class = match.className
-		match.var = match.varName
-		match.base = match.baseName
-		registers[#registers + 1] = match
-	end
-
-	-- Find registers without base class
-	local withoutBase = PatternUtils.findAllMatches(text, PATTERNS.VGUI_REGISTER_NO_BASE,
-		{ "className", "varName" })
-	for _, match in ipairs(withoutBase) do
-		match.type = "vgui.Register"
-		match.class = match.className
-		match.var = match.varName
-		match.base = nil
-		registers[#registers + 1] = match
-	end
-
-	return registers
-end
-
----Finds derma.DefineControl calls in text
----@param text string
----@return table[]
-function PatternUtils.findDermaDefines(text)
-	local defines = {}
-
-	-- Find defines with base class
-	local withBase = PatternUtils.findAllMatches(text, PATTERNS.DERMA_DEFINE_WITH_BASE,
-		{ "className", "varName", "baseName" })
-	for _, match in ipairs(withBase) do
-		match.type = "derma.DefineControl"
-		match.class = match.className
-		match.var = match.varName
-		match.base = match.baseName
-		defines[#defines + 1] = match
-	end
-
-	-- Find defines without base class
-	local withoutBase = PatternUtils.findAllMatches(text, PATTERNS.DERMA_DEFINE_NO_BASE,
-		{ "className", "varName" })
-	for _, match in ipairs(withoutBase) do
-		match.type = "derma.DefineControl"
-		match.class = match.className
-		match.var = match.varName
-		match.base = nil
-		defines[#defines + 1] = match
-	end
-
-	return defines
-end
-
----Finds AccessorFunc calls in text
----@param text string
----@param global string|nil
----@param class string|nil
----@return table[]
-function PatternUtils.findAccessorFuncs(text, global, class)
-	local accessorFuncs = {}
-
-	-- Find AccessorFunc calls with force type
-	local withForce = PatternUtils.findAllMatches(text, PATTERNS.ACCESSOR_FUNC_WITH_FORCE,
-		{ "tableVar", "varName", "funcName", "forceType" })
-	for _, match in ipairs(withForce) do
-		match.targetClass = (match.tableVar == global) and class or nil
-		accessorFuncs[#accessorFuncs + 1] = match
-	end
-
-	-- Find AccessorFunc calls without force type
-	local withoutForce = PatternUtils.findAllMatches(text, PATTERNS.ACCESSOR_FUNC_NO_FORCE,
-		{ "tableVar", "varName", "funcName" })
-	for _, match in ipairs(withoutForce) do
-		match.forceType = nil
-		match.targetClass = (match.tableVar == global) and class or nil
-		accessorFuncs[#accessorFuncs + 1] = match
-	end
-
-	return accessorFuncs
-end
-
----Finds variable table assignments in text
----@param text string
----@return table<string, table[]>
-function PatternUtils.findVarTableAssignments(text)
-	local assignsByVar = {}
-
-	-- Find local variable assignments
-	local localAssigns = PatternUtils.findAllMatches(text, PATTERNS.LOCAL_VAR_ASSIGNMENT, { "varName" })
-	for _, match in ipairs(localAssigns) do
-		local list = assignsByVar[match.varName] or {}
-		list[#list + 1] = { s = match.start, e = match.finish - 1 }
-		assignsByVar[match.varName] = list
-	end
-
-	-- Find global variable assignments (more complex logic needed)
-	local pos = 1
-	while true do
-		local s, e, varName = string.find(text, PATTERNS.GLOBAL_VAR_ASSIGNMENT, pos)
-		if not s then break end
-
-		-- Check if this assignment is NOT preceded by "local" keyword
-		local lineStart = text:sub(1, s):match(".*\n()[^\n]*$") or 1
-		local beforeAssign = text:sub(lineStart, s - 1)
-		if not beforeAssign:match("local%s+$") then
-			local list = assignsByVar[varName] or {}
-			list[#list + 1] = { s = s, e = e }
-			assignsByVar[varName] = list
-		end
-		pos = e + 1
-	end
-
-	return assignsByVar
-end
-
 local function findFolderBase(uri, global, class)
-	-- Use the new FolderDetection module with configuration
 	local config = ConfigManager.getConfig()
 	return FolderDetection.detectFolderStructure(uri, global, class, config)
 end
@@ -456,172 +197,41 @@ function TextProcessor.hasExistingClassDoc(text, className)
 	return string.find(text, pattern) ~= nil
 end
 
----Checks if a class documentation exists before a specific position
+-- Scans all class docs in the original text and returns a list of {className, insertAfter, tableVar}
+-- tableVar is inferred from the next assignment line after the class doc (e.g., PANEL = {})
 ---@param text string
----@param className string
----@param beforePos integer
----@return boolean
-function TextProcessor.hasClassDocBefore(text, className, beforePos)
-	-- Check within a small window above the insertion point for an existing class doc
-	local start = math.max(1, (beforePos or 1) - 800)
-	local slice = text:sub(start, math.max(start, (beforePos or 1) - 1))
-	local pattern = "---@class%s+" .. className .. "[%s: ]"
-	return slice:find(pattern) ~= nil
-end
-
----Finds the nearest assignment before a given position
----@param assigns table[]|nil
----@param beforePos integer
----@return table|nil
-function TextProcessor.findNearestPriorAssignment(assigns, beforePos)
-	if not assigns then return nil end
-	local best
-	for _, a in ipairs(assigns) do
-		if a.s < beforePos then
-			if not best or a.s > best.s then
-				best = a
-			end
+---@return table[] classDocs
+local function FindAllClassDocs(text)
+	local results = {}
+	local idx = 1
+	while true do
+		local s, e, cls = text:find("---@class%s+([%w_%.]+)[%s:]", idx)
+		if not s then break end
+		local after = text:find("\n", e + 1) or e
+		-- Look at the next non-empty line and try to parse a variable assignment at line start
+		local rest = text:sub(after + 1)
+		-- get first line
+		local nl = rest:find("\n") or (#rest + 1)
+		local nextLine = rest:sub(1, nl - 1)
+		-- Allow blank line between class and table; if blank, peek one more line
+		local consumed = nl
+		if nextLine:match("^%s*$") then
+			local rest2 = rest:sub(consumed + 1)
+			local nl2 = rest2:find("\n") or (#rest2 + 1)
+			nextLine = rest2:sub(1, nl2 - 1)
 		end
+		local tbl = nextLine:match("^%s*local%s+([%a_][%w_]*)%s*=") or nextLine:match("^%s*([%a_][%w_]*)%s*=")
+		results[#results + 1] = { className = cls, insertAfter = after, tableVar = tbl }
+		idx = e + 1
 	end
-	return best
-end
-
----Generates field documentation for accessor functions
----@param accessorFuncs table[]
----@param varName string
----@param className string
----@param startPos integer
----@param endPos integer
----@return string[]
-function TextProcessor.generateAccessorFieldDocs(accessorFuncs, varName, className, startPos, endPos)
-	local fieldDocs = {}
-	local accessorForceTypes = ConfigManager.getAccessorForceTypes()
-
-	for _, accessor in ipairs(accessorFuncs) do
-		if accessor.tableVar == varName and accessor.start > startPos and accessor.start < endPos then
-			local forceType = "any"
-			if accessor.forceType then
-				forceType = accessorForceTypes[accessor.forceType] or "any"
-			end
-
-			fieldDocs[#fieldDocs + 1] = ("---@field Get%s fun(self: %s): %s"):format(accessor.funcName, className,
-				forceType)
-			fieldDocs[#fieldDocs + 1] = ("---@field Set%s fun(self: %s, value: %s)"):format(accessor.funcName, className,
-				forceType)
-
-			if accessor.varName then
-				fieldDocs[#fieldDocs + 1] = ("---@field protected %s %s"):format(accessor.varName, forceType)
-			end
-		end
-	end
-
-	return fieldDocs
-end
-
--- Class Detection Utilities Module
-local ClassDetection = {}
-
----Normalises a URI path and splits it into segments
----@param uri string
----@return string[] segments
-function ClassDetection.parseUriPath(uri)
-	local uriPath = uri:gsub("\\", "/")
-	local normUri = uriPath:lower()
-
-	local segments = {}
-	for seg in normUri:gmatch("[^/]+") do
-		segments[#segments + 1] = seg
-	end
-
-	return segments
-end
-
----Converts scope configurations into searchable format
----@return table[] scopes
-function ClassDetection.prepareScopes()
-	local scopes = {}
-	for _, sc in ipairs(ConfigManager.getScopes()) do
-		local folder = (sc.folder or ""):gsub("\\", "/"):gsub("/+", "/"):lower()
-		local folderSegs = {}
-		for s in folder:gmatch("[^/]+") do
-			folderSegs[#folderSegs + 1] = s
-		end
-		if #folderSegs > 0 then
-			scopes[#scopes + 1] = { global = sc.global, segs = folderSegs }
-		end
-	end
-	return scopes
-end
-
----Finds the best matching scope for the given path segments
----@param segments string[]
----@param scopes table[]
----@return table|nil best
-function ClassDetection.findBestScope(segments, scopes)
-	local best = nil -- {global=string, endIndex=integer, len=integer}
-
-	for _, sc in ipairs(scopes) do
-		local fsegs = sc.segs
-		local flen = #fsegs
-		-- start from (#segments - flen + 1) to include last valid position
-		for i = #segments - flen + 1, 1, -1 do
-			local match = true
-			for j = 1, flen do
-				if segments[i + j - 1] ~= fsegs[j] then
-					match = false
-					break
-				end
-			end
-			if match then
-				local endIndex = i + flen - 1
-				if not best or endIndex > best.endIndex or (endIndex == best.endIndex and flen > best.len) then
-					best = { global = sc.global, endIndex = endIndex, len = flen }
-				end
-				break -- Stop after first (nearest) match
-			end
-		end
-	end
-
-	return best
-end
-
----Determines the class name from path segments and scope match
----@param segments string[]
----@param best table
----@return string|nil class
-function ClassDetection.determineClassName(segments, best)
-	local afterIdx = best.endIndex + 1
-	if afterIdx > #segments then return nil end
-
-	local lastSeg = segments[#segments]
-	local class
-	if afterIdx == #segments then
-		-- Single file directly under scope folder: <class>.lua
-		class = lastSeg:gsub("%.lua$", "")
-	else
-		-- Any other nested file belongs to the first directory after the scope
-		class = segments[afterIdx]
-	end
-
-	return (class and class ~= "") and class or nil
+	return results
 end
 
 ---@param uri string
 ---@return string? global, string? class
 local function GetScopedClass(uri)
-	local segments = ClassDetection.parseUriPath(uri)
-	if #segments == 0 then return end
-
-	local scopes = ClassDetection.prepareScopes()
-	if #scopes == 0 then return end
-
-	local best = ClassDetection.findBestScope(segments, scopes)
-	if not best then return end
-
-	local class = ClassDetection.determineClassName(segments, best)
-	if class then
-		return best.global, class
-	end
+	local scopes = ConfigManager.getScopes()
+	return ScriptedClass.getScopedClass(uri, scopes)
 end
 
 ---@class PluginDiff
@@ -647,7 +257,7 @@ local function processScriptedClassDiffs(uri, text, global, class)
 	local hasLocal = string.find(text, localPattern) ~= nil
 
 	local folderBase = findFolderBase(uri, global, class)
-	local baseIdent, baseString
+	local baseIdent, baseString, baseStringEscaped
 	if folderBase then
 		if folderBase.kind == "ident" then
 			baseIdent = folderBase.value
@@ -656,15 +266,22 @@ local function processScriptedClassDiffs(uri, text, global, class)
 		end
 	else
 		baseIdent = text:match(global .. "%.%s*Base%s*=%s*([%a_][%w_%.]*)")
-		baseString = text:match(global .. "%.%s*Base%s*=%s*[\"']([^\"']+)[\"']")
+		baseStringEscaped = text:match(global .. "%.%s*Base%s*=%s*([%a_][%w_%.]*)")
 	end
 
 	local parent = global
 	local localText = ""
 	if baseIdent then
-		parent = baseIdent
-		if not hasLocal then
-			localText = ("local %s = %s\n\n"):format(global, baseIdent)
+		if baseIdent == global then
+			parent = global
+			if not hasLocal then
+				localText = ("local %s = {}\n\n"):format(global)
+			end
+		else
+			parent = baseIdent
+			if not hasLocal then
+				localText = ("local %s = %s\n\n"):format(global, baseIdent)
+			end
 		end
 	elseif baseString then
 		local baseMap = ConfigManager.getBaseGmodMap()
@@ -685,19 +302,13 @@ local function processScriptedClassDiffs(uri, text, global, class)
 	if class and not hasDermaRegistrations then
 		local alreadyHasClassDoc = TextProcessor.hasExistingClassDoc(text, class)
 
-		-- Process AccessorFunc calls for this scripted class
-		local accessorDiffs = AccessorProcessor.processAccessorFuncs(text, global, class, config)
-		local fieldDocs = {}
-
-		-- Extract field documentation from accessor diffs
-		for _, diff in ipairs(accessorDiffs) do
-			if diff.text then
-				for line in diff.text:gmatch("[^\n]+") do
-					if line:match("^%-%-%-@field") then
-						fieldDocs[#fieldDocs + 1] = line
-					end
-				end
-			end
+		-- Process AccessorFunc calls for this scripted class (collect field docs to place under the class doc)
+		local accessorResult = AccessorProcessor.processAccessorFuncsWithFieldDocs(text, global, class, config)
+		local fieldDocs = accessorResult.fieldDocs
+		-- Also collect NetworkVar/NetworkVarElement field docs to keep them under the class doc instead of inline
+		local nvFieldDocs = NetworkVarProcessor.collectFieldDocs(text, global, class, config)
+		for _, line in ipairs(nvFieldDocs) do
+			fieldDocs[#fieldDocs + 1] = line
 		end
 
 		if not alreadyHasClassDoc then
@@ -710,13 +321,30 @@ local function processScriptedClassDiffs(uri, text, global, class)
 				finish = 0,
 				text = classDoc .. "\n" .. localText,
 			}
-		elseif localText ~= "" then
-			-- Class doc exists; only ensure local stub is present
-			diffs[#diffs + 1] = {
-				start = 1,
-				finish = 0,
-				text = localText,
-			}
+		else
+			-- Class doc exists, append field docs right under the existing class line
+			if #fieldDocs > 0 then
+				local pattern = "---@class%s+" .. class .. "[%s:]"
+				local s, e = text:find(pattern)
+				if s then
+					-- find end of the line
+					local after = text:find("\n", e + 1) or e
+					local toInsert = table.concat(fieldDocs, "\n") .. "\n"
+					diffs[#diffs + 1] = {
+						start = after + 1,
+						finish = after,
+						text = toInsert,
+					}
+				end
+			end
+			if localText ~= "" then
+				-- Ensure local stub is present at file top if missing
+				diffs[#diffs + 1] = {
+					start = 1,
+					finish = 0,
+					text = localText,
+				}
+			end
 		end
 	else
 		if localText ~= "" then
@@ -776,14 +404,132 @@ function OnSetText(uri, text)
 
 		-- Handle Derma panels (vgui.Register and derma.DefineControl)
 		local dermaDiffs = DermaProcessor.processDermaRegistrations(text, config)
+
+		do
+			local function insertPos(d)
+				return d.start or ((d.finish or 0) + 1)
+			end
+			local sorted = {}
+			for i = 1, #dermaDiffs do sorted[i] = dermaDiffs[i] end
+			table.sort(sorted, function(a, b) return insertPos(a) < insertPos(b) end)
+
+			for idx, d in ipairs(sorted) do
+				if type(d.text) == "string" and d.text:find("---@class", 1, true) then
+					local cls = d.text:match("^%-%-%-@class%s+([%w_%.]+)") or d.text:match("^---@class%s+([%w_%.]+)")
+					if cls then
+						local lineStart = insertPos(d)
+						-- Bound this class's scan range to right before the next class insertion
+						local nextPos = (sorted[idx + 1] and insertPos(sorted[idx + 1])) or (#text + 1)
+						local rs = lineStart
+						local re = nextPos - 1
+
+						-- Grab the table assignment line from original text at this position
+						local rest = text:sub(lineStart)
+						local nl = rest:find("\n") or (#rest + 1)
+						local nextLine = rest:sub(1, nl - 1)
+						if nextLine:match("^%s*$") then
+							local rest2 = rest:sub(nl + 1)
+							local nl2 = rest2:find("\n") or (#rest2 + 1)
+							nextLine = rest2:sub(1, nl2 - 1)
+						end
+						local tbl = nextLine:match("^%s*local%s+([%a_][%w_]*)%s*=") or
+							nextLine:match("^%s*([%a_][%w_]*)%s*=")
+
+						local function collectAccessorLines(target)
+							local collected = {}
+							local acc = AccessorProcessor.processAccessorFuncsForTarget(text, target, nil, cls, config,
+								rs, re)
+							for _, ad in ipairs(acc or {}) do
+								if ad.text and #ad.text > 0 then
+									for line in ad.text:gmatch("[^\n]+") do
+										collected[#collected + 1] = line
+									end
+								end
+							end
+							return collected
+						end
+
+						local lines = {}
+						-- Prefer the parsed table variable; fall back to PANEL and self to handle typical Derma patterns
+						if tbl then
+							for _, l in ipairs(collectAccessorLines(tbl)) do lines[#lines + 1] = l end
+						end
+						if #lines == 0 then
+							for _, l in ipairs(collectAccessorLines("PANEL")) do lines[#lines + 1] = l end
+						end
+						if #lines == 0 then
+							for _, l in ipairs(collectAccessorLines("self")) do lines[#lines + 1] = l end
+						end
+
+						if #lines > 0 then
+							d.text = ("---@class %s : "):format(cls) ..
+								(d.text:match(":%s*(.-)\n") or "Panel") .. "\n" .. table.concat(lines, "\n") .. "\n"
+						end
+					end
+				end
+			end
+		end
 		for _, diff in ipairs(dermaDiffs) do
 			diffs[#diffs + 1] = diff
 		end
 
-		-- Handle NetworkVar calls
-		local networkVarDiffs = NetworkVarProcessor.processNetworkVars(text, global, class, config)
-		for _, diff in ipairs(networkVarDiffs) do
-			diffs[#diffs + 1] = diff
+		-- NetworkVar/AccessorFunc handling
+		-- 1) Scripted classes: already appended under the class doc in processScriptedClassDiffs
+		-- 2) Non-scripted: if class docs exist in file, append AccessorFunc/NetworkVar under each corresponding class
+		--    based on the table immediately following that class; otherwise, for AccessorFunc skip (avoid inline)
+		if not global then
+			local classDocs = FindAllClassDocs(text)
+			if classDocs and #classDocs > 0 then
+				for _, cdoc in ipairs(classDocs) do
+					local lines = {}
+					if cdoc.tableVar and cdoc.className then
+						-- AccessorFunc for this specific table var, but only include those that appear after this class doc
+						-- and before the next class doc (closest class above behavior)
+						local rs = cdoc.insertAfter + 1
+						local re = #text
+						-- find the next class doc start
+						for _, nextDoc in ipairs(classDocs) do
+							if nextDoc.insertAfter > cdoc.insertAfter then
+								re = nextDoc.insertAfter
+								break
+							end
+						end
+						local accDiffs = AccessorProcessor.processAccessorFuncsForTarget(text, cdoc.tableVar, nil,
+							cdoc.className, config, rs, re)
+						for _, ad in ipairs(accDiffs or {}) do
+							if ad.text and #ad.text > 0 then
+								for line in ad.text:gmatch("[^\n]+") do
+									lines[#lines + 1] = line
+								end
+							end
+						end
+						-- This might not be needed, since NetworkVar is entity only
+						local nvLines = NetworkVarProcessor.collectFieldDocs and
+							NetworkVarProcessor.collectFieldDocs(text, nil, cdoc.className, config) or {}
+						for _, l in ipairs(nvLines) do lines[#lines + 1] = l end
+					end
+					if #lines > 0 then
+						diffs[#diffs + 1] = {
+							start = cdoc.insertAfter + 1,
+							finish = cdoc.insertAfter,
+							text = table.concat(lines, "\n") .. "\n",
+						}
+					end
+				end
+			else
+				-- Skip if no class doc present
+				local networkVarDiffs = NetworkVarProcessor.processNetworkVars(text, nil, nil, config)
+				for _, diff in ipairs(networkVarDiffs) do diffs[#diffs + 1] = diff end
+			end
+		end
+
+		-- Apply diffs from bottom to top to avoid offset shifts when inserting/replacing
+		if #diffs > 1 then
+			table.sort(diffs, function(a, b)
+				local sa = a.start or 0
+				local sb = b.start or 0
+				return sa > sb
+			end)
 		end
 
 		if #diffs == 0 then
@@ -869,7 +615,6 @@ end
 
 
 
-
 ---@param tbl any
 ---@param wanted string
 ---@return any|nil
@@ -950,7 +695,6 @@ end
 
 
 
-
 ---@param uri string # File URI
 ---@param ast any # File AST
 ---@return any|nil
@@ -978,7 +722,9 @@ function ResolveRequire(uri, name)
 	local callingDirURI = callingURI:match("^(.*)/[^/]*$")
 
 	local relative = callingDirURI .. "/" .. name
-	if uriExists(relative) then
+
+	local relativePath = relative:sub(8)
+	if fs.exists(relativePath) then
 		return { relative }
 	end
 

@@ -1,7 +1,17 @@
 --[[
 	Handles AccessorFunc call processing and generates getter/setter documentation.
+
+	Processes AccessorFunc(target, varKey, name, forceType) calls and generates:
+	- Backing field documentation (if varKey provided)
+	- Setter method documentation (Set<Name>)
+	- Getter method documentation (Get<Name>)
+
+	Supports force type resolution from config.accessorForceTypes mapping.
 --]]
 
+local DocLines = require("plugin.doc-lines")
+local ArgParser = require("plugin.arg-parser")
+local CallScanner = require("plugin.call-scanner")
 local AccessorProcessor = {}
 
 ---Processes AccessorFunc calls in text and generates documentation diffs
@@ -11,21 +21,40 @@ local AccessorProcessor = {}
 ---@param config table Configuration
 ---@return table[] diffs Array of documentation diffs
 function AccessorProcessor.processAccessorFuncs(text, global, class, config)
+	local result = AccessorProcessor.processAccessorFuncsWithFieldDocs(text, global, class, config)
+	return result.diffs
+end
+
+---Processes AccessorFunc calls and returns both diffs and field documentation lines
+---@param text string File content
+---@param global string|nil Global scope
+---@param class string|nil Class name
+---@param config table Configuration
+---@return table result {diffs: table[], fieldDocs: string[]}
+function AccessorProcessor.processAccessorFuncsWithFieldDocs(text, global, class, config)
 	local diffs = {}
+	local fieldDocs = {}
 	local patterns = config.patterns or {}
-	local accessorPattern = patterns.accessorFunc or "AccessorFunc%s*%("
+	local accessorPattern = patterns.accessorFunc
 
 	-- Find all AccessorFunc calls
 	local accessorCalls = AccessorProcessor.findAccessorCalls(text, accessorPattern)
 
 	for _, call in ipairs(accessorCalls) do
-		local diff = AccessorProcessor.createAccessorDocumentation(call, global, class, config, text)
-		if diff then
-			diffs[#diffs + 1] = diff
+		local result = AccessorProcessor.createAccessorDocumentationWithFieldDocs(call, global, class, config)
+		if result then
+			diffs[#diffs + 1] = result.diff
+			-- Collect field documentation lines
+			for _, fieldDoc in ipairs(result.fieldDocs) do
+				fieldDocs[#fieldDocs + 1] = fieldDoc
+			end
 		end
 	end
 
-	return diffs
+	return {
+		diffs = diffs,
+		fieldDocs = fieldDocs
+	}
 end
 
 ---Finds AccessorFunc calls in text
@@ -34,20 +63,20 @@ end
 ---@return table[] calls Array of accessor call info
 function AccessorProcessor.findAccessorCalls(text, pattern)
 	local calls = {}
-
-	for match in text:gmatch(pattern .. "([^%)]*%)") do
-		local args = AccessorProcessor.parseAccessorArgs(match)
+	local raw = CallScanner.findCalls(text, pattern)
+	for _, c in ipairs(raw) do
+		local args = AccessorProcessor.parseAccessorArgs(c.argsText)
 		if args and args.name then
 			calls[#calls + 1] = {
 				name = args.name,
 				varKey = args.varKey,
 				forceType = args.forceType,
-				target = args.target,
-				position = text:find(pattern .. match, 1, true) or 0
+				target = args
+					.target,
+				position = c.position
 			}
 		end
 	end
-
 	return calls
 end
 
@@ -56,44 +85,7 @@ end
 ---@return table|nil args Parsed arguments
 function AccessorProcessor.parseAccessorArgs(argsText)
 	-- Parse AccessorFunc(target, varKey, name, forceType)
-	local parts = {}
-	local current = ""
-	local inString = false
-	local stringChar = nil
-	local parenDepth = 0
-
-	for i = 1, #argsText do
-		local char = argsText:sub(i, i)
-
-		if not inString then
-			if char == '"' or char == "'" then
-				inString = true
-				stringChar = char
-				current = current .. char
-			elseif char == "(" then
-				parenDepth = parenDepth + 1
-				current = current .. char
-			elseif char == ")" then
-				parenDepth = parenDepth - 1
-				current = current .. char
-			elseif char == "," and parenDepth == 0 then
-				parts[#parts + 1] = current:match("^%s*(.-)%s*$") -- trim
-				current = ""
-			else
-				current = current .. char
-			end
-		else
-			current = current .. char
-			if char == stringChar and argsText:sub(i - 1, i - 1) ~= "\\" then
-				inString = false
-				stringChar = nil
-			end
-		end
-	end
-
-	if current ~= "" then
-		parts[#parts + 1] = current:match("^%s*(.-)%s*$") -- trim
-	end
+	local parts = ArgParser.splitArguments(argsText, { trackParentheses = true })
 
 	if #parts < 3 then
 		return nil
@@ -104,9 +96,9 @@ function AccessorProcessor.parseAccessorArgs(argsText)
 	local name = parts[3]
 	local forceType = parts[4]
 
-	-- Extract string values
-	local nameStr = name:match([["([^"]+)"]]) or name:match([['([^']+)']])
-	local varKeyStr = varKey:match([["([^"]+)"]]) or varKey:match([['([^']+)']])
+	-- Extract string values using shared helper
+	local nameStr = ArgParser.extractStringValue(name)
+	local varKeyStr = ArgParser.extractStringValue(varKey)
 
 	if not nameStr then
 		return nil
@@ -120,39 +112,43 @@ function AccessorProcessor.parseAccessorArgs(argsText)
 	}
 end
 
----Creates documentation diff for AccessorFunc
+--Creates documentation diff for AccessorFunc
 ---@param call table Accessor call info
 ---@param global string|nil Global scope
 ---@param class string|nil Class name
 ---@param config table Configuration
----@param text string Full file content
 ---@return table|nil diff Documentation diff
+
 function AccessorProcessor.createAccessorDocumentation(call, global, class, config, text)
+	local result = AccessorProcessor.createAccessorDocumentationWithFieldDocs(call, global, class, config)
+	return result and result.diff or nil
+end
+
+---Creates documentation diff and field docs for AccessorFunc
+---@param call table Accessor call info
+---@param global string|nil Global scope
+---@param class string|nil Class name
+---@param config table Configuration
+---@return table|nil result {diff: table, fieldDocs: string[]}
+function AccessorProcessor.createAccessorDocumentationWithFieldDocs(call, global, class, config)
 	-- Determine the force type
 	local forceTypeStr = AccessorProcessor.resolveForceType(call.forceType, config)
 
 	-- Find insertion point (typically before the AccessorFunc call)
 	local insertPos = call.position
 
-	-- Generate documentation
-	local docs = {}
-
-	-- Add protected backing field if varKey is provided
-	if call.varKey then
-		docs[#docs + 1] = string.format("---@field protected %s %s", call.varKey, forceTypeStr)
-	end
-
-	-- Add getter and setter methods
+	-- Generate documentation using shared helper
 	local selfType = class or global or "table"
-	docs[#docs + 1] = string.format("---@field Set%s fun(self: %s, value: %s)", call.name, selfType, forceTypeStr)
-	docs[#docs + 1] = string.format("---@field Get%s fun(self: %s): %s", call.name, selfType, forceTypeStr)
-
-	local docText = table.concat(docs, "\n") .. "\n"
+	local docs = DocLines.formatAccessorPair(call.name, selfType, forceTypeStr, call.varKey)
+	local docText = DocLines.toDiffText(docs)
 
 	return {
-		start = insertPos - 1,
-		finish = insertPos - 1,
-		text = docText
+		diff = {
+			start = insertPos - 1,
+			finish = insertPos - 1,
+			text = docText
+		},
+		fieldDocs = docs
 	}
 end
 
@@ -198,7 +194,7 @@ end
 ---@param patterns table Pattern configurations
 ---@return boolean hasAccessorFuncs
 function AccessorProcessor.hasAccessorFuncs(text, patterns)
-	local accessorPattern = patterns.accessorFunc or "AccessorFunc%s*%("
+	local accessorPattern = patterns.accessorFunc
 	return text:find(accessorPattern) ~= nil
 end
 
@@ -209,19 +205,26 @@ end
 ---@param class string|nil Class name
 ---@param config table Configuration
 ---@return table[] diffs Array of documentation diffs
-function AccessorProcessor.processAccessorFuncsForTarget(text, target, global, class, config)
+function AccessorProcessor.processAccessorFuncsForTarget(text, target, global, class, config, rangeStart, rangeEnd)
 	local diffs = {}
 	local patterns = config.patterns or {}
-	local accessorPattern = patterns.accessorFunc or "AccessorFunc%s*%("
+	local accessorPattern = patterns.accessorFunc
 
 	-- Find AccessorFunc calls that target the specified identifier
 	local accessorCalls = AccessorProcessor.findAccessorCalls(text, accessorPattern)
 
 	for _, call in ipairs(accessorCalls) do
 		-- Check if this call targets our identifier
-		if call.target == target or
-			(global and call.target == global) or
-			call.target == "self" then
+		local withinRange = true
+		if rangeStart or rangeEnd then
+			local rs = rangeStart or 0
+			local re = rangeEnd or math.huge
+			withinRange = (call.position >= rs) and (call.position <= re)
+		end
+
+		if withinRange and (call.target == target or
+				(global and call.target == global) or
+				call.target == "self") then
 			local diff = AccessorProcessor.createAccessorDocumentation(call, global, class, config, text)
 			if diff then
 				diffs[#diffs + 1] = diff

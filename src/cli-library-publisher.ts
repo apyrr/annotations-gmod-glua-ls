@@ -91,7 +91,7 @@ async function main() {
   // Copy main plugin files
   const pluginFiles = [
     { src: 'plugin.lua', dest: 'plugin.lua' },
-    { src: 'plugin.config.lua', dest: 'plugin.config.lua' }
+    { src: 'config.lua', dest: 'config.lua' }
   ];
 
   for (const { src, dest } of pluginFiles) {

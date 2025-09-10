@@ -196,11 +196,14 @@ export class GluaApiWriter {
         if (canonicalClassName !== canonicalClassName.toUpperCase()) api += 'local ';
         api += `${canonicalClassName} = {}\n`;
 
-        // Generate aliases for case-insensitive class names
+        // Generate value aliases for case-insensitive class names
+        // Prefer declaring the alias as a class inheriting from the canonical class,
+        // then bind the alias value to the canonical table. This gives both value & type.
         if (this.hasClassAliases(canonicalClassName)) {
           const aliases = this.getClassAliases(canonicalClassName);
           for (const alias of aliases) {
-            api += `---@alias ${alias} ${canonicalClassName}\n`;
+            api += `---@class ${alias} : ${canonicalClassName}\n`;
+            api += `${alias} = ${canonicalClassName}\n`;
           }
         }
 
@@ -463,6 +466,29 @@ export class GluaApiWriter {
   }
 
   public writeToDisk() {
+    // First, ensure any class.* overrides without corresponding wiki pages get emitted.
+    // These aren't triggered via writeClassStart if the wiki never provided that class.
+    const orphanClassOverrides: string[] = [];
+    for (const [key, value] of this.pageOverrides.entries()) {
+      const m = key.match(/^class\.(.+)$/);
+      if (m) {
+        const className = m[1];
+        // Respect canonical alias resolution
+        const canonical = this.resolveToCanonicalClassName(className);
+        if (!this.writtenClasses.has(canonical)) {
+          // Mark as written to avoid duplicate emission later should a late page appear.
+          this.writtenClasses.add(canonical);
+          // Normalize trailing newline
+          orphanClassOverrides.push(value.endsWith('\n') ? value : value + '\n');
+        }
+      }
+    }
+    if (orphanClassOverrides.length > 0) {
+      const customFile = `${this.outputDirectory}/custom_classes.lua`;
+      const payload = ['---@meta', '', ...orphanClassOverrides].join('\n');
+      fs.writeFileSync(customFile, payload);
+    }
+
     this.files.forEach((pages: IndexedWikiPage[], filePath: string) => {
       let api = this.makeApiFromPages(pages);
 

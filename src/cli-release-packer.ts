@@ -48,7 +48,7 @@ async function main() {
       // Include plugin files for lua target (now copied to input directory by publish-library)
       if (target === 'lua') {
         const relativePath = path.relative(options.input, file);
-        if (relativePath === 'plugin.lua' || relativePath === 'plugin.config.lua') return true;
+        if (relativePath === 'plugin.lua' || relativePath === 'config.lua') return true;
         if (relativePath.startsWith('plugin/') && relativePath.endsWith('.lua')) return true;
       }
 

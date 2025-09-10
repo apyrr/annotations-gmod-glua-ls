@@ -1,7 +1,16 @@
 --[[
 	Handles NetworkVar and NetworkVarElement call processing and generates getter/setter documentation.
+
+	Processes NetworkVar(type, slot, name) and NetworkVarElement(type, slot, element, name) calls and generates:
+	- Setter method documentation (Set<Name>)
+	- Getter method documentation (Get<Name>)
+
+	Supports data type resolution from config.dtTypes mapping (DT_* constants to Lua types).
 --]]
 
+local DocLines = require("plugin.doc-lines")
+local ArgParser = require("plugin.arg-parser")
+local CallScanner = require("plugin.call-scanner")
 local NetworkVarProcessor = {}
 
 ---Processes NetworkVar calls in text and generates documentation diffs
@@ -28,6 +37,39 @@ function NetworkVarProcessor.processNetworkVars(text, global, class, config)
 	return diffs
 end
 
+	---Collects NetworkVar and NetworkVarElement docs as strings (no diffs), to be appended under a class doc
+	---@param text string File content
+	---@param global string|nil Global scope
+	---@param class string|nil Class name
+	---@param config table Configuration
+	---@return string[] fieldDocs Documentation lines
+	function NetworkVarProcessor.collectFieldDocs(text, global, class, config)
+		local fieldDocs = {}
+		local patterns = config.patterns or {}
+
+		local networkVarCalls = NetworkVarProcessor.findNetworkVarCalls(text, patterns.networkVar)
+		for _, call in ipairs(networkVarCalls) do
+			local luaType = NetworkVarProcessor.resolveDtType(call.type, config)
+			local selfType = class or global or "Entity"
+			local docs = DocLines.formatNetworkVarPair(call.name, selfType, luaType)
+			for _, line in ipairs(docs) do
+				fieldDocs[#fieldDocs + 1] = line
+			end
+		end
+
+		local networkVarElementCalls = NetworkVarProcessor.findNetworkVarElementCalls(text, patterns.networkVarElement)
+		for _, call in ipairs(networkVarElementCalls) do
+			local luaType = NetworkVarProcessor.resolveDtType(call.type, config)
+			local selfType = class or global or "Entity"
+			local docs = DocLines.formatNetworkVarPair(call.name, selfType, luaType)
+			for _, line in ipairs(docs) do
+				fieldDocs[#fieldDocs + 1] = line
+			end
+		end
+
+		return fieldDocs
+	end
+
 ---Processes NetworkVar calls in text
 ---@param text string File content
 ---@param global string|nil Global scope
@@ -37,7 +79,7 @@ end
 function NetworkVarProcessor.processNetworkVarCalls(text, global, class, config)
 	local diffs = {}
 	local patterns = config.patterns or {}
-	local networkVarPattern = patterns.networkVar or "NetworkVar%s*%("
+	local networkVarPattern = patterns.networkVar
 
 	-- Find all NetworkVar calls
 	local networkVarCalls = NetworkVarProcessor.findNetworkVarCalls(text, networkVarPattern)
@@ -61,7 +103,7 @@ end
 function NetworkVarProcessor.processNetworkVarElementCalls(text, global, class, config)
 	local diffs = {}
 	local patterns = config.patterns or {}
-	local networkVarElementPattern = patterns.networkVarElement or "NetworkVarElement%s*%("
+	local networkVarElementPattern = patterns.networkVarElement
 
 	-- Find all NetworkVarElement calls
 	local networkVarElementCalls = NetworkVarProcessor.findNetworkVarElementCalls(text, networkVarElementPattern)
@@ -82,18 +124,13 @@ end
 ---@return table[] calls Array of NetworkVar call info
 function NetworkVarProcessor.findNetworkVarCalls(text, pattern)
 	local calls = {}
-
-	for match in text:gmatch(pattern .. "([^%)]*%)") do
-		local args = NetworkVarProcessor.parseNetworkVarArgs(match)
+	local raw = CallScanner.findCalls(text, pattern)
+	for _, c in ipairs(raw) do
+		local args = NetworkVarProcessor.parseNetworkVarArgs(c.argsText)
 		if args and args.type and args.name then
-			calls[#calls + 1] = {
-				type = args.type,
-				name = args.name,
-				position = text:find(pattern .. match, 1, true) or 0
-			}
+			calls[#calls + 1] = { type = args.type, name = args.name, position = c.position }
 		end
 	end
-
 	return calls
 end
 
@@ -103,19 +140,13 @@ end
 ---@return table[] calls Array of NetworkVarElement call info
 function NetworkVarProcessor.findNetworkVarElementCalls(text, pattern)
 	local calls = {}
-
-	for match in text:gmatch(pattern .. "([^%)]*%)") do
-		local args = NetworkVarProcessor.parseNetworkVarElementArgs(match)
+	local raw = CallScanner.findCalls(text, pattern)
+	for _, c in ipairs(raw) do
+		local args = NetworkVarProcessor.parseNetworkVarElementArgs(c.argsText)
 		if args and args.type and args.name then
-			calls[#calls + 1] = {
-				type = args.type,
-				name = args.name,
-				index = args.index,
-				position = text:find(pattern .. match, 1, true) or 0
-			}
+			calls[#calls + 1] = { type = args.type, name = args.name, index = args.index, position = c.position }
 		end
 	end
-
 	return calls
 end
 
@@ -124,44 +155,14 @@ end
 ---@return table|nil args Parsed arguments
 function NetworkVarProcessor.parseNetworkVarArgs(argsText)
 	-- Parse NetworkVar("Type", "Name")
-	local parts = {}
-	local current = ""
-	local inString = false
-	local stringChar = nil
-
-	for i = 1, #argsText do
-		local char = argsText:sub(i, i)
-
-		if not inString then
-			if char == '"' or char == "'" then
-				inString = true
-				stringChar = char
-				current = current .. char
-			elseif char == "," then
-				parts[#parts + 1] = current:match("^%s*(.-)%s*$") -- trim
-				current = ""
-			else
-				current = current .. char
-			end
-		else
-			current = current .. char
-			if char == stringChar and argsText:sub(i - 1, i - 1) ~= "\\" then
-				inString = false
-				stringChar = nil
-			end
-		end
-	end
-
-	if current ~= "" then
-		parts[#parts + 1] = current:match("^%s*(.-)%s*$") -- trim
-	end
+	local parts = ArgParser.splitArguments(argsText)
 
 	if #parts < 2 then
 		return nil
 	end
 
-	local typeStr = parts[1]:match([["([^"]+)"]]) or parts[1]:match([['([^']+)']])
-	local nameStr = parts[2]:match([["([^"]+)"]]) or parts[2]:match([['([^']+)']])
+	local typeStr = ArgParser.extractStringValue(parts[1])
+	local nameStr = ArgParser.extractStringValue(parts[2])
 
 	if not typeStr or not nameStr then
 		return nil
@@ -178,45 +179,15 @@ end
 ---@return table|nil args Parsed arguments
 function NetworkVarProcessor.parseNetworkVarElementArgs(argsText)
 	-- Parse NetworkVarElement("Type", index, "Name")
-	local parts = {}
-	local current = ""
-	local inString = false
-	local stringChar = nil
-
-	for i = 1, #argsText do
-		local char = argsText:sub(i, i)
-
-		if not inString then
-			if char == '"' or char == "'" then
-				inString = true
-				stringChar = char
-				current = current .. char
-			elseif char == "," then
-				parts[#parts + 1] = current:match("^%s*(.-)%s*$") -- trim
-				current = ""
-			else
-				current = current .. char
-			end
-		else
-			current = current .. char
-			if char == stringChar and argsText:sub(i - 1, i - 1) ~= "\\" then
-				inString = false
-				stringChar = nil
-			end
-		end
-	end
-
-	if current ~= "" then
-		parts[#parts + 1] = current:match("^%s*(.-)%s*$") -- trim
-	end
+	local parts = ArgParser.splitArguments(argsText)
 
 	if #parts < 3 then
 		return nil
 	end
 
-	local typeStr = parts[1]:match([["([^"]+)"]]) or parts[1]:match([['([^']+)']])
-	local indexStr = parts[2]:match("^%s*(%d+)%s*$")
-	local nameStr = parts[3]:match([["([^"]+)"]]) or parts[3]:match([['([^']+)']])
+	local typeStr = ArgParser.extractStringValue(parts[1])
+	local indexNum = ArgParser.extractNumericValue(parts[2])
+	local nameStr = ArgParser.extractStringValue(parts[3])
 
 	if not typeStr or not nameStr then
 		return nil
@@ -225,7 +196,7 @@ function NetworkVarProcessor.parseNetworkVarElementArgs(argsText)
 	return {
 		type = typeStr,
 		name = nameStr,
-		index = indexStr and tonumber(indexStr) or nil
+		index = indexNum
 	}
 end
 
@@ -234,26 +205,26 @@ end
 ---@param global string|nil Global scope
 ---@param class string|nil Class name
 ---@param config table Configuration
----@param text string Full file content
 ---@return table|nil diff Documentation diff
 function NetworkVarProcessor.createNetworkVarDocumentation(call, global, class, config, text)
 	-- Resolve the data type
 	local luaType = NetworkVarProcessor.resolveDtType(call.type, config)
 
-	-- Find insertion point
+	-- Find insertion point at the start of the line containing the call
 	local insertPos = call.position
+	if text then
+		local before = text:sub(1, math.max(insertPos - 1, 0))
+		local lineStart = before:match(".*\n()") or 1
+		insertPos = lineStart
+	end
 
-	-- Generate documentation
+	-- Generate documentation using shared helper
 	local selfType = class or global or "Entity"
-	local docs = {
-		string.format("---@field Set%s fun(self: %s, value: %s)", call.name, selfType, luaType),
-		string.format("---@field Get%s fun(self: %s): %s", call.name, selfType, luaType)
-	}
-
-	local docText = table.concat(docs, "\n") .. "\n"
+	local docs = DocLines.formatNetworkVarPair(call.name, selfType, luaType)
+	local docText = DocLines.toDiffText(docs)
 
 	return {
-		start = insertPos - 1,
+		start = insertPos,
 		finish = insertPos - 1,
 		text = docText
 	}
@@ -264,26 +235,26 @@ end
 ---@param global string|nil Global scope
 ---@param class string|nil Class name
 ---@param config table Configuration
----@param text string Full file content
 ---@return table|nil diff Documentation diff
 function NetworkVarProcessor.createNetworkVarElementDocumentation(call, global, class, config, text)
 	-- Resolve the data type
 	local luaType = NetworkVarProcessor.resolveDtType(call.type, config)
 
-	-- Find insertion point
+	-- Find insertion point at the start of the line containing the call
 	local insertPos = call.position
+	if text then
+		local before = text:sub(1, math.max(insertPos - 1, 0))
+		local lineStart = before:match(".*\n()") or 1
+		insertPos = lineStart
+	end
 
-	-- Generate documentation
+	-- Generate documentation using shared helper
 	local selfType = class or global or "Entity"
-	local docs = {
-		string.format("---@field Set%s fun(self: %s, value: %s)", call.name, selfType, luaType),
-		string.format("---@field Get%s fun(self: %s): %s", call.name, selfType, luaType)
-	}
-
-	local docText = table.concat(docs, "\n") .. "\n"
+	local docs = DocLines.formatNetworkVarPair(call.name, selfType, luaType)
+	local docText = DocLines.toDiffText(docs)
 
 	return {
-		start = insertPos - 1,
+		start = insertPos,
 		finish = insertPos - 1,
 		text = docText
 	}
@@ -303,8 +274,8 @@ end
 ---@param patterns table Pattern configurations
 ---@return boolean hasNetworkVars
 function NetworkVarProcessor.hasNetworkVars(text, patterns)
-	local networkVarPattern = patterns.networkVar or "NetworkVar%s*%("
-	local networkVarElementPattern = patterns.networkVarElement or "NetworkVarElement%s*%("
+	local networkVarPattern = patterns.networkVar
+	local networkVarElementPattern = patterns.networkVarElement
 
 	return text:find(networkVarPattern) ~= nil or text:find(networkVarElementPattern) ~= nil
 end
