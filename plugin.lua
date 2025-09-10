@@ -364,12 +364,12 @@ local function processDefineBaseclass(text)
 	local diffs = {}
 	local idx = 1
 	while true do
-		local s, e = string.find(text, "DEFINE_BASECLASS", idx, true)
+		local s, e, paren = text:find("DEFINE_BASECLASS%s*(%b())", idx)
 		if not s then break end
 		diffs[#diffs + 1] = {
 			start = s,
 			finish = e,
-			text = "local BaseClass = baseclass.Get",
+			text = "local BaseClass = baseclass.Get" .. paren .. "\n",
 		}
 		idx = e + 1
 	end
