@@ -376,6 +376,46 @@ local function processDefineBaseclass(text)
 	return diffs
 end
 
+local function insertPos(d)
+	return d.start or ((d.finish or 0) + 1)
+end
+
+local function resolveDiffConflicts(allDiffs)
+	local replacements = {}
+	for _, d in ipairs(allDiffs) do
+		if d.start and d.finish and d.finish >= d.start then
+			replacements[#replacements + 1] = { s = d.start, e = d.finish }
+		end
+	end
+	if #replacements == 0 then return end
+	for _, d in ipairs(allDiffs) do
+		if d.start and d.finish and d.finish < d.start then
+			local p = d.start
+			for i = 1, #replacements do
+				local r = replacements[i]
+				if p >= r.s and p <= r.e then
+					d.start = r.e + 1
+					d.finish = r.e
+					break
+				end
+			end
+		end
+	end
+end
+
+local function collectAccessorLines(text, target, cls, config, rs, re)
+	local collected = {}
+	local acc = AccessorProcessor.processAccessorFuncsForTarget(text, target, nil, cls, config, rs, re)
+	for _, ad in ipairs(acc or {}) do
+		if ad.text and #ad.text > 0 then
+			for line in ad.text:gmatch("[^\n]+") do
+				collected[#collected + 1] = line
+			end
+		end
+	end
+	return collected
+end
+
 ---@param uri string # File URI
 ---@param text string # File content
 ---@return PluginDiff[]|nil
@@ -404,9 +444,6 @@ function OnSetText(uri, text)
 		local dermaDiffs = DermaProcessor.processDermaRegistrations(text, config)
 
 		do
-			local function insertPos(d)
-				return d.start or ((d.finish or 0) + 1)
-			end
 			local sorted = {}
 			for i = 1, #dermaDiffs do sorted[i] = dermaDiffs[i] end
 			table.sort(sorted, function(a, b) return insertPos(a) < insertPos(b) end)
@@ -433,30 +470,26 @@ function OnSetText(uri, text)
 						local tbl = nextLine:match("^%s*local%s+([%a_][%w_]*)%s*=") or
 							nextLine:match("^%s*([%a_][%w_]*)%s*=")
 
-						local function collectAccessorLines(target)
-							local collected = {}
-							local acc = AccessorProcessor.processAccessorFuncsForTarget(text, target, nil, cls, config,
-								rs, re)
-							for _, ad in ipairs(acc or {}) do
-								if ad.text and #ad.text > 0 then
-									for line in ad.text:gmatch("[^\n]+") do
-										collected[#collected + 1] = line
-									end
-								end
-							end
-							return collected
-						end
 
 						local lines = {}
 						-- Prefer the parsed table variable; fall back to PANEL and self to handle typical Derma patterns
 						if tbl then
-							for _, l in ipairs(collectAccessorLines(tbl)) do lines[#lines + 1] = l end
+							for _, l in ipairs(collectAccessorLines(text, tbl, cls, config, rs, re)) do
+								lines[#lines + 1] =
+									l
+							end
 						end
 						if #lines == 0 then
-							for _, l in ipairs(collectAccessorLines("PANEL")) do lines[#lines + 1] = l end
+							for _, l in ipairs(collectAccessorLines(text, "PANEL", cls, config, rs, re)) do
+								lines[#lines + 1] =
+									l
+							end
 						end
 						if #lines == 0 then
-							for _, l in ipairs(collectAccessorLines("self")) do lines[#lines + 1] = l end
+							for _, l in ipairs(collectAccessorLines(text, "self", cls, config, rs, re)) do
+								lines[#lines + 1] =
+									l
+							end
 						end
 
 						if #lines > 0 then
@@ -522,30 +555,6 @@ function OnSetText(uri, text)
 		end
 
 		-- Resolve overlapping diffs: prevent insertions from targeting the same span as replacements
-		local function resolveDiffConflicts(allDiffs)
-			local replacements = {}
-			for _, d in ipairs(allDiffs) do
-				if d.start and d.finish and d.finish >= d.start then
-					replacements[#replacements + 1] = { s = d.start, e = d.finish }
-				end
-			end
-			if #replacements == 0 then return end
-			for _, d in ipairs(allDiffs) do
-				-- Treat finish < start as an insertion at position start
-				if d.start and d.finish and d.finish < d.start then
-					local p = d.start
-					for i = 1, #replacements do
-						local r = replacements[i]
-						if p >= r.s and p <= r.e then
-							-- Move insertion to immediately after the replaced region
-							d.start = r.e + 1
-							d.finish = r.e
-							break
-						end
-					end
-				end
-			end
-		end
 
 		resolveDiffConflicts(diffs)
 
