@@ -13,6 +13,7 @@ local log = require("log")
 local guide = require("parser.guide")
 local helper = require("plugins.astHelper")
 local fs = require("bee.filesystem")
+local vm = require("vm")
 
 local FolderDetection = require("plugin.folder-detection")
 local DermaProcessor = require("plugin.derma-processor")
@@ -151,6 +152,15 @@ function ConfigManager.getAccessorForceTypesByNumber()
 		error("config.accessorForceTypesByNumber must be a table")
 	end
 	return cfg.accessorForceTypesByNumber
+end
+
+---@return table<string,string>
+function ConfigManager.getParamNameTypes()
+	local cfg = loadConfig(); assert(cfg)
+	if type(cfg.paramNameTypes) ~= "table" then
+		return {}
+	end
+	return cfg.paramNameTypes
 end
 
 ---@return table
@@ -891,3 +901,43 @@ function ResolveRequire(uri, name)
 	local absolute = uri .. "/lua/" .. name
 	return { absolute }
 end
+
+-- Smart parameter inference using VM.OnCompileFunctionParam
+-- Provides best-effort typing for function parameters based on
+-- common parameter name patterns defined in `config.paramNameTypes`.
+-- This hook calls the default compiler behavior first and only attempts
+-- to infer when no type was determined.
+function OnCompileFunctionParam(next, func, param)
+	-- Call default first. Only attempt inference if default did not resolve the type.
+	if next and next(func, param) then
+		return true
+	end
+
+	local source = param and (param.node or param.source or param)
+	if not source then return nil end
+
+	local mappings = ConfigManager.getParamNameTypes()
+
+	local name
+	if type(source) == "table" then
+		name = source.name or source[1] or source[2]
+	elseif type(source) == "string" then
+		name = source
+	end
+	if not name or type(name) ~= "string" then return nil end
+
+	local lname = name:lower()
+	local typ = mappings[lname]
+	if typ then
+		local declared = vm.declareGlobal('type', typ, nil)
+		if declared then
+			vm.setNode(source, vm.createNode(declared, source))
+			return true
+		end
+	end
+	return nil
+end
+
+-- VM.OnCompileFunctionParam is weird, for some reason this fixes the errors?
+VM = VM or {}
+VM.OnCompileFunctionParam = OnCompileFunctionParam

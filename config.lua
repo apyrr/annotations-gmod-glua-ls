@@ -89,6 +89,68 @@ return {
 		FORCE_VECTOR = "Vector",
 	},
 
+	-- Common parameter name to type hints used by VM.OnCompileFunctionParam
+	-- These are used to "guess" parameter types, only if no other type info is available
+	-- I'm not really sure how I feel about this, needs more testing to ensure it doesn't break things
+	paramNameTypes = {
+
+		-- player
+		ply = "Player",
+		player = "Player",
+		client = "Player",
+
+		-- entity
+		ent = "Entity",
+		entity = "Entity",
+		veh = "Vehicle",
+		car = "Vehicle",
+
+		-- vectors / angles / colors
+		vec = "Vector",
+		vector = "Vector",
+		ang = "Angle",
+		angle = "Angle",
+		col = "Color",
+		color = "Color",
+		pos = "Vector",
+		pos1 = "Vector",
+		pos2 = "Vector",
+		startpos = "Vector",
+		endpos = "Vector",
+		plypos = "Vector",
+		hitpos = "Vector",
+
+		-- ent related, not sure about these ones
+		owner = "Entity",
+		attacker = "Entity",
+		victim = "Entity",
+		activator = "Entity",
+		caller = "Entity",
+		inflictor = "Entity",
+		swep = "SWEP",
+		wep = "Weapon",
+		weapon = "Weapon",
+
+		-- strings
+		name = "string",
+		filepath = "string",
+		filename = "string",
+		url = "string",
+		steamid = "string",
+		steamid64 = "string",
+		sid64 = "string",
+		str = "string",
+
+		-- generic
+		tbl = "table",
+		msg = "string",
+		distance = "number",
+		speed = "number",
+		num = "number",
+		count = "number",
+
+	},
+
 	-- Numeric FORCE_* mapping (optional but recommended)
 	-- Keys correspond to FORCE_* numeric constants used by AccessorFunc when a number is passed
 	accessorForceTypesByNumber = {
