@@ -425,6 +425,11 @@ function OnSetText(uri, text)
 		local diffs = {}
 		local config = ConfigManager.getConfig()
 
+		-- Skip meta files
+		if type(text) == "string" and text:match("^%-%-%-@meta") then
+			return nil
+		end
+
 		-- Handle scripted class (ENT/SWEP/EFFECT/TOOL) detection and localization
 		local global, class = GetScopedClass(uri)
 		if global then
