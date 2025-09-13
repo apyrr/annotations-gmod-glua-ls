@@ -14,49 +14,64 @@ This repository is a re-write of my personal LuaLS addon to instead use annotati
 
 ## Manual installation (Visual Studio Code)
 
-1. Obtain the addon files:
-    - Download the `.plugin` folder from a release ZIP, or clone the `lua-language-server-addon` branch into a folder you control.
+#### 1. Install the Lua Language Server (LuaLS) extension
+- Lua Language Server Extension: https://marketplace.visualstudio.com/items?itemName=sumneko.lua
+- (OPTIONAL) You can also use my extension pack, it includes LuaLS and other useful things: https://marketplace.visualstudio.com/items?itemName=pollux.gmod-dev-pack-cityrp or just search for `pollux.gmod-dev-pack-cityrp` in VSCode Extensions View
 
-2. Install the Lua Language Server (LuaLS) extension: https://marketplace.visualstudio.com/items?itemName=sumneko.lua
+#### 2. Download the addon files:
+- Download the `.plugin` folder from a release ZIP, or clone the `lua-language-server-addon` branch into a folder you control.
+- You can find the latest release here, download the one ending in `.plugin.zip`: https://github.com/Pollux12/gmod-luals-addon/releases/latest
+- Extract it somewhere, you'll need the folder path in the next step.
 
-3. Configure VSCode settings with the following. Replace <FOLDER-PATH> with the absolute path to the folder containing this plugin. You can shove these values into either your workspace or profile VSCode settings
+#### 3. Configure VSCode settings with the following. You can shove these values into either your workspace or profile VSCode settings.
 - Open VSCode JSON Settings via: `File` -> `Preferences` -> `Settings` -> `Open Settings (JSON)` (top right corner, file icon)
 - Copy and paste the below code block into your settings
-```
-"Lua.runtime.version": "LuaJIT",
-"Lua.runtime.special": {
-  "include": "require",
-  "IncludeCS": "require"
-},
-"Lua.runtime.nonstandardSymbol": [
-  "!",
-  "!=",
-  "&&",
-  "||",
-  "//",
-  "/**/",
-  "continue"
-],
-"Lua.runtime.plugin": [
-  "<FOLDER-PATH>\\plugin.lua"
-],
-"Lua.workspace.library": [
-  "<FOLDER-PATH>\\library"
-],
-"Lua.diagnostics.disable": [
-  "lowercase-global",
-  "inject-field",
-  "duplicate-set-field"
-],
-"Lua.completion.requireSeparator": "/",
-```
+- Replace `FOLDER-PATH` with the absolute path of the folder containing the extracted plugin files. You may have to replace `\` with `/`.
+  <details>
+  <summary>Settings to copy (click to expand)</summary>
+
+  ```json
+    "Lua.runtime.version": "LuaJIT",
+    "Lua.runtime.special": {
+      "include": "require",
+      "IncludeCS": "require"
+    },
+    "Lua.runtime.nonstandardSymbol": [
+      "!",
+      "!=",
+      "&&",
+      "||",
+      "//",
+      "/**/",
+      "continue"
+    ],
+    "Lua.runtime.plugin": [
+      "FOLDER-PATH/plugin.lua"
+    ],
+    "Lua.workspace.library": [
+      "FOLDER-PATH/library"
+    ],
+    "Lua.diagnostics.disable": [
+      "lowercase-global",
+      "inject-field",
+      "duplicate-set-field"
+    ],
+    "Lua.completion.requireSeparator": "/",
+  ```
+
+  </details>
 The above is required since this isn't uploaded to the LuaLS addon repository, so it won't automatically load the config contained within the release. If you are not using a dedicated VSCode profile for GLua (you should be!), I'd recommend adding the above to workspace settings rather than profile settings, since profile settings are global (you may run into issues if you have the above config with non gmod lua).
 
-4. (OPTIONAL) You may use a `.luarc.json` file in the root directory of the workspace to automatically set relevant settings for anyone editing that workspace. [Here are the settings I use in my own project](https://gist.github.com/Pollux12/21513ae49a4b35dc0d2034917468b028), feel free to adapt them.
+#### 4. (OPTIONAL) luarc.json configuration
+- You may use a `.luarc.json` file in the root directory of the workspace to automatically set relevant settings for anyone editing that workspace.
+- [Here are the settings I use in my own project](https://gist.github.com/Pollux12/21513ae49a4b35dc0d2034917468b028), feel free to adapt them.
 
-5. (OPTIONAL) You may make use of a .editorconfig file to configure the formatter settings for anyone editing that workspace. [Here are the settings I use in my own project](https://gist.github.com/Pollux12/3556eb9208e78e90a49e1f6141f9cb2f), feel free to adapt them (NOTE: I don't use CFC-guidelines, [you may find this more useful if you do](https://cfc.gg/configs/lua_ls/.editorconfig)).
+#### 5. (OPTIONAL) editorconfig configuration
+- You may make use of a .editorconfig file to configure the formatter settings for anyone editing that workspace.
+- [Here are the settings I use in my own project](https://gist.github.com/Pollux12/3556eb9208e78e90a49e1f6141f9cb2f), feel free to adapt them
+- If you follow CFC-guidelines, [you may find this more useful](https://cfc.gg/configs/lua_ls/.editorconfig).
 
-6. Once you're done setting it up, please close and re-open VSCode.
+#### 6. Once you're done setting it up, please close and re-open VSCode.
 
 ## Notes
 
@@ -67,7 +82,6 @@ The above is required since this isn't uploaded to the LuaLS addon repository, s
 - If you use this on a gamemode, check the `config.lua` file to add custom file paths and similar. It should be possible to add support for things such as plugins and items by adding custom scopes (Anything defined in scopes will automatically define a class annotation and adds a fake `local <class> = {}` (only the language server sees this variable) to the top of that file, the class will be automatically registered either based on the file name, or the folder name, depending on the config. It should be smart enough for most cases.
 - I know that not everything makes use of the config yet; I'm slowly converting things over once confirming they're stable, since I didn't use a config system in my original version.
 - After some more testing, I do plan on cleaning this up and creating a PR into the upstream repo.
-- This should still work with other editors that support LuaLS.
 
 Some code is taken from the following:
 https://github.com/TIMONz1535/glua-api-snippets/tree/plugin-wip1
