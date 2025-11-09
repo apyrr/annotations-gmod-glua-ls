@@ -643,7 +643,7 @@ local function processScriptedClassDiffs(uri, text, global, class, config)
 		-- Use configured patterns to detect base assignment in current file as a fallback
 		local baseIdentPattern = (patterns and patterns.baseAssignment) or "([%a_][%w_]*)%.%s*Base%s*=%s*([%a_][%w_%.]*)"
 		local baseStringPattern = (patterns and patterns.baseStringAssignment) or
-		"([%a_][%w_]*)%.%s*Base%s*=%s*[\"']([^\"']+)[\"']"
+			"([%a_][%w_]*)%.%s*Base%s*=%s*[\"']([^\"']+)[\"']"
 		local var, ident = text:match(baseIdentPattern)
 		if var == global and ident and ident ~= "" then
 			baseIdent = ident
@@ -690,7 +690,7 @@ local function processScriptedClassDiffs(uri, text, global, class, config)
 
 		local accessorResult = AccessorProcessor.processAccessorFuncsWithFieldDocs(text, global, class, cfg)
 		local fieldDocs = accessorResult.fieldDocs
-		local nvFieldDocs = NetworkVarProcessor.collectFieldDocs(text, global, class, cfg)
+		local nvFieldDocs = NetworkVarProcessor.collectFieldDocs(text, global, class, cfg, uri)
 		for _, line in ipairs(nvFieldDocs) do
 			fieldDocs[#fieldDocs + 1] = line
 		end
@@ -810,6 +810,7 @@ function OnSetText(uri, text)
 		---@type PluginDiff[]
 		local diffs = {}
 		local config = ConfigManager.getConfig(uri)
+		NetworkVarProcessor.resetHandled(uri)
 
 		-- Skip meta files
 		if type(text) == "string" and text:match("^%-%-%-@meta") then
@@ -930,7 +931,7 @@ function OnSetText(uri, text)
 						end
 						-- This might not be needed, since NetworkVar is entity only
 						local nvLines = NetworkVarProcessor.collectFieldDocs and
-							NetworkVarProcessor.collectFieldDocs(text, nil, cdoc.className, config) or {}
+							NetworkVarProcessor.collectFieldDocs(text, nil, cdoc.className, config, uri) or {}
 						for _, l in ipairs(nvLines) do lines[#lines + 1] = l end
 					end
 					if #lines > 0 then
@@ -943,7 +944,7 @@ function OnSetText(uri, text)
 				end
 			else
 				-- Skip if no class doc present
-				local networkVarDiffs = NetworkVarProcessor.processNetworkVars(text, nil, nil, config)
+				local networkVarDiffs = NetworkVarProcessor.processNetworkVars(text, nil, nil, config, uri)
 				for _, diff in ipairs(networkVarDiffs) do diffs[#diffs + 1] = diff end
 			end
 		end
@@ -996,7 +997,7 @@ end
 ---@param group table
 ---@param isElement boolean
 ---@return boolean|nil
-local function BindNetworkVar(ast, classNode, source, group, isElement, config, uri)
+local function BindNetworkVar(ast, classNode, source, group, isElement, config, uri, className, globalName)
 	local args = guide.getParams(source)
 	if not args or #args < (isElement and 4 or 3) then
 		return
@@ -1039,7 +1040,12 @@ local function BindNetworkVar(ast, classNode, source, group, isElement, config, 
 		return
 	end
 
-	return addGetSetDocs(ast, classNode, name, "Entity", dtType, group)
+	local scopeName = className or globalName
+	if NetworkVarProcessor.wasHandled and NetworkVarProcessor.wasHandled(uri, scopeName, name) then
+		return
+	end
+
+	return addGetSetDocs(ast, classNode, name, scopeName or "Entity", dtType, group)
 end
 
 
@@ -1112,7 +1118,8 @@ local function processScriptedClass(uri, ast, group, config)
 		if not targetSelf or targetSelf.node ~= classNode then
 			return
 		end
-		return BindNetworkVar(ast, classNode, source, group, targetName == "NetworkVarElement", config, uri)
+		return BindNetworkVar(ast, classNode, source, group, targetName == "NetworkVarElement", config, uri, class,
+			global)
 	end)
 	if ok == false then
 		-- Do not abort other passes if NetworkVar binding fails
