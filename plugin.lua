@@ -1085,6 +1085,75 @@ local function isInsideSetupDataTables(node)
 	return false
 end
 
+-- Helper to inspect function definitions for NetworkVar calls inside SetupDataTables
+local function findNetworkVarWrappers(ast)
+	local wrappers = {}
+
+	guide.eachSourceType(ast, "function", function(funcNode)
+		-- Get the name of this function
+		local parent = funcNode.parent
+		if not parent then return end
+		-- guide.getKeyName works for methods/fields; [1] is the name for local/global identifiers
+		local wrapperName = guide.getKeyName(parent) or (parent.type == "local" and parent[1]) or
+			(parent.type == "setglobal" and parent[1])
+		if not wrapperName then return end
+		local isMethodDefinition = parent.type == "setmethod"
+
+		-- Check calls inside the function
+		guide.eachSourceType(funcNode, "call", function(callNode)
+			local method = callNode.node
+			local methodName = guide.getKeyName(method)
+			if methodName ~= "NetworkVar" and methodName ~= "NetworkVarElement" then return end
+
+			local args = guide.getParams(callNode)
+			-- args: [self, type, slot/index, name, ...]
+			if not args or #args < 3 then return end
+
+			local info = {}
+
+			local typeArg = args[2]
+			if typeArg and typeArg.type == "string" then
+				info.fixedType = typeArg[1]
+			end
+
+			if not info.fixedType then return end
+
+			-- We prioritize arguments in reverse (name -> element -> slot) as name is usually the last relevant arg.
+			local isElement = methodName == "NetworkVarElement"
+			info.isElement = isElement
+			local searchIndices = isElement and { 5, 4, 3 } or { 4, 3 }
+			local paramParams = guide.getParams(funcNode) or {}
+
+			for _, argIdx in ipairs(searchIndices) do
+				local argNode = args[argIdx]
+				if argNode then
+					if argNode.type == "getlocal" then
+						for i, p in ipairs(paramParams) do
+							if p == argNode.node then
+								info.nameParamIndex = i
+								if isMethodDefinition then
+									info.wrapperIsMethod = true
+								elseif i > 1 and paramParams[1] and (paramParams[1][1] == "self" or guide.getKeyName(paramParams[1]) == "self") then
+									info.wrapperIsMethod = true
+								end
+								break
+							end
+						end
+					elseif argNode.type == "string" then
+						info.fixedName = argNode[1]
+					end
+				end
+				if info.nameParamIndex or info.fixedName then break end
+			end
+
+			if info.nameParamIndex or info.fixedName then
+				wrappers[wrapperName] = info
+			end
+		end)
+	end)
+
+	return wrappers
+end
 
 
 ---@param uri string
@@ -1104,22 +1173,81 @@ local function processScriptedClass(uri, ast, group, config)
 	if ok == false then
 		return nil, nil, nil
 	end
+	-- Scan for local wrapper functions that internally call NetworkVar
+	local wrappers = findNetworkVarWrappers(ast)
 	-- Bind NetworkVar/NetworkVarElement calls inside SetupDataTables on this class
 	ok = guide.eachSourceType(ast, "call", function(source)
 		local targetMethod = source.node
-		local targetName = guide.getKeyName(targetMethod)
-		if targetName ~= "NetworkVar" and targetName ~= "NetworkVarElement" then
-			return
-		end
+		local targetName = guide.getKeyName(targetMethod) or (targetMethod.type == "getlocal" and targetMethod[1]) or
+			(targetMethod.type == "getglobal" and targetMethod[1])
 		if not isInsideSetupDataTables(source) then
 			return
 		end
-		local targetSelf = targetMethod.node and guide.getSelfNode(targetMethod.node)
-		if not targetSelf or targetSelf.node ~= classNode then
-			return
+		if targetName == "NetworkVar" or targetName == "NetworkVarElement" then
+			local targetSelf = targetMethod.node and guide.getSelfNode(targetMethod.node)
+			if not targetSelf or targetSelf.node ~= classNode then
+				targetSelf = guide.getSelfNode(targetSelf)
+				if not targetSelf or targetSelf.node ~= classNode then
+					return
+				end
+			end
+			return BindNetworkVar(ast, classNode, source, group, targetName == "NetworkVarElement", config, uri, class,
+				global)
+		elseif wrappers[targetName] then
+			local info = wrappers[targetName]
+			local args = guide.getParams(source)
+			if not args then return end
+
+			local callIsMethod = (targetMethod and (targetMethod.type == "method" or targetMethod.type == "getmethod"))
+			if callIsMethod then
+				local targetSelf = targetMethod.node and guide.getSelfNode(targetMethod.node)
+				if not targetSelf or targetSelf.node ~= classNode then
+					targetSelf = guide.getSelfNode(targetSelf)
+					if not targetSelf or targetSelf.node ~= classNode then
+						return
+					end
+				end
+			end
+
+			local typeStr = info.fixedType
+			local nameStr = info.fixedName
+
+			if info.nameParamIndex then
+				-- Account for 'self' potentially being different between definition and call
+				local defOffset = info.wrapperIsMethod and 1 or 0
+				local callOffset = callIsMethod and 1 or 0
+				local function resolveNameAt(index)
+					if index > 0 and index <= #args then
+						local nameArg = args[index]
+						if nameArg and nameArg.type == "string" then
+							return nameArg[1]
+						end
+					end
+				end
+
+				local relativeIndex = info.nameParamIndex - defOffset + callOffset
+				local resolvedName = resolveNameAt(relativeIndex)
+				if not resolvedName then
+					local altDefOffset = defOffset == 1 and 0 or 1
+					resolvedName = resolveNameAt(info.nameParamIndex - altDefOffset + callOffset)
+				end
+				if resolvedName then
+					nameStr = resolvedName
+				end
+			end
+
+			if typeStr and nameStr then
+				local dtMap = (config and config.dtTypes) or ConfigManager.getDtTypes(uri)
+				local luaType = info.isElement and "number" or (dtMap[typeStr] or "any")
+
+				local scopeName = class or global
+				if NetworkVarProcessor.wasHandled and NetworkVarProcessor.wasHandled(uri, scopeName, nameStr) then
+					return
+				end
+
+				return addGetSetDocs(ast, classNode, nameStr, scopeName or "Entity", luaType, group)
+			end
 		end
-		return BindNetworkVar(ast, classNode, source, group, targetName == "NetworkVarElement", config, uri, class,
-			global)
 	end)
 	if ok == false then
 		-- Do not abort other passes if NetworkVar binding fails

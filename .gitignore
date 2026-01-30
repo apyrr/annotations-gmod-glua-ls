@@ -5,3 +5,4 @@ coverage
 output
 
 .vscode/launch.json
+.vscode/mcp.json
