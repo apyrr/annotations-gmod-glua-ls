@@ -98,9 +98,7 @@ The above is required since this isn't uploaded to the LuaLS addon repository, s
 ```json
 {
   "runtime.plugin": ["FOLDER-PATH/plugin.lua"],
-  "runtime.pluginArgs": {
-    "FOLDER-PATH/plugin.lua": ["--config", "config/glua-snippets.json"]
-  }
+  "runtime.pluginArgs": ["--config", ".glua-api-snippets.json"]
 }
 ```
 
