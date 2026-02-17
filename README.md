@@ -3,20 +3,12 @@
 > **Forked from** [luttje/glua-api-snippets](https://github.com/luttje/glua-api-snippets)
 > Original project by luttje - converted for EmmyLua analyzer integration
 
-Automatically generates EmmyLua annotations for Garry's Mod API by scraping the [GMod Wiki](https://wiki.facepunch.com/gmod/). These annotations are consumed by [emmylua-analyzer-rust](https://github.com/EmmyLuaLs/emmylua-analyzer-rust).
+Automatically generates EmmyLua annotations for Garry's Mod API by scraping the [GMod Wiki](https://wiki.facepunch.com/gmod/). These annotations are consumed by [gmod-glua-ls](https://github.com/Pollux12/gmod-glua-ls).
 
 **Note**: This repository is part of the GMod language server infrastructure.
 Annotations are automatically downloaded by the VSCode extension from the `emmylua-annotations` branch - manual setup is not required for end users.
 
-## Project Scope
-
-This repository is an internal annotation generation component used by the GMod language server stack.
-
-- Not intended as an end-user setup project
-- Not maintained as a public contribution workflow
-- Focused on deterministic scrape -> generate -> package automation
-
-## Technical Workflow
+## Workflow
 
 1. `npm run wiki-check-changed` checks whether upstream wiki content changed since the latest scrape tag.
 2. `npm run scrape-wiki` scrapes and normalizes wiki pages, then writes Lua annotations into `output/`.
@@ -75,9 +67,3 @@ For local language server testing, generate annotations and point your workspace
 - `src/api-writer/` - EmmyLua/LuaCATS annotation generation
 - `custom/` - manual overrides merged during generation
 - `output/` - generated annotation files (published to `emmylua-annotations` branch)
-
-## Related Projects
-
-- Original upstream project: [luttje/glua-api-snippets](https://github.com/luttje/glua-api-snippets)
-- Language server core: [emmylua-analyzer-rust](https://github.com/EmmyLuaLs/emmylua-analyzer-rust)
-- VSCode extension integration: [Pollux12/gmod-glua-ls](https://github.com/Pollux12/gmod-glua-ls)
