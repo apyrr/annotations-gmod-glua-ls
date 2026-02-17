@@ -40,3 +40,5 @@ Generated annotations are consumed by the GMod `emmylua-analyzer-rust` language 
 - **Generated-over-manual**: Most annotation content should be produced by scraper/writer logic, not hand-edited output files.
 - **Override discipline**: Use `custom/` only when generator logic cannot cleanly express the fix yet.
 - **Test coverage**: Any behavior change in scraper/writer should include or update Jest tests.
+
+Note: Build files are excluded from git - if searching for something within these generated files, you need to make sure you have includeIgnoredFiles enabled in your search.

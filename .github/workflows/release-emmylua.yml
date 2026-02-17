@@ -57,10 +57,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Create orphan branch with output/ contents
+          # Stash only the final .lua files + metadata to a temp dir before switching branches.
+          # This is necessary because `git rm -rf .` only removes tracked files; output/ is
+          # gitignored (untracked) so it survives, causing duplicates when git add -A picks it up.
+          tmpdir=$(mktemp -d)
+          find output/ -maxdepth 1 -type f -name '*.lua' -exec cp {} "$tmpdir/" \;
+          cp output/__metadata.json "$tmpdir/"
+
+          # Create orphan branch, then wipe EVERYTHING (tracked + untracked + ignored)
           git checkout --orphan emmylua-annotations
           git rm -rf .
-          cp -r output/* .
+          git clean -fdx
+
+          # Restore only the final annotation files
+          cp "$tmpdir/"*.lua .
+          cp "$tmpdir/__metadata.json" .
           git add -A
 
           # Commit with timestamp
