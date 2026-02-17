@@ -1,6 +1,6 @@
 {
   "name": "glua-api-scraper",
-  "description": "Scrapes the Garry's Mod Wiki in order to build annotations for Lua Language Server to provide intellisense.",
+  "description": "Scrapes the Garry's Mod Wiki to generate EmmyLua annotations for Garry's Mod tooling.",
   "keywords": [
     "Garry's Mod",
     "api",
@@ -22,10 +22,9 @@
     "wiki-check-changed": "tsx ./src/cli-change-checker.ts",
     "scrape-wiki": "tsx ./src/cli-scraper.ts --output ./output/ --customOverrides ./custom/ --wipe",
     "pack-release": "tsx ./src/cli-release-packer.ts --input ./output/ --output ./dist/release/",
-    "publish-library": "tsx ./src/cli-library-publisher.ts --input ./output/ --output ./dist/libraries/garrysmod",
-    "build-plugin": "npm run publish-library && npm run pack-release",
     "stylua-custom": "npx --yes @johnnymorganz/stylua-bin@0.17.1 ./custom",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules VERBOSE_LOGGING=1 npx jest",
+    "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules VERBOSE_LOGGING=1 npx jest --watch",
     "ci:test": "cross-env NODE_OPTIONS=--experimental-vm-modules npx jest --ci --coverage"
   },
   "devDependencies": {

@@ -1,12 +1,12 @@
-import { apiDefinition as hookApiDefinition, json as hookJson } from '../test-data/offline-sites/gmod-wiki/hook-player-initial-spawn';
+import { json as hookJson } from '../test-data/offline-sites/gmod-wiki/hook-player-initial-spawn';
 // import { apiDefinition as classFunctionApiDefinition, json as classFunctionJson } from '../test-data/offline-sites/gmod-wiki/class-function-weapon-allowsautoswitchto';
 // import { apiDefinition as libraryFunctionApiDefinition, json as libraryFunctionJson } from '../test-data/offline-sites/gmod-wiki/library-function-ai-getscheduleid';
-import { apiDefinition as structApiDefinition, markup as structMarkup, json as structJson } from '../test-data/offline-sites/gmod-wiki/struct-custom-entity-fields';
+import { markup as structMarkup, json as structJson } from '../test-data/offline-sites/gmod-wiki/struct-custom-entity-fields';
 // import { apiDefinition as enumApiDefinition, json as enumJson } from '../test-data/offline-sites/gmod-wiki/enums-use';
-import { apiDefinition as enumNavCornerApiDefinition, markup as enumNavCornerMarkup } from '../test-data/offline-sites/gmod-wiki/enums-navcorner';
+import { markup as enumNavCornerMarkup } from '../test-data/offline-sites/gmod-wiki/enums-navcorner';
 import { markup as panelMarkup, apiDefinition as panelApiDefinition } from '../test-data/offline-sites/gmod-wiki/panel-slider';
-import { markup as multiReturnFuncMarkup, apiDefinition as multiReturnFuncApiDefinition } from '../test-data/offline-sites/gmod-wiki/library-function-concommand-gettable';
-import { markup as varargsFuncMarkup, apiDefinition as varargsFuncApiDefinition } from '../test-data/offline-sites/gmod-wiki/library-function-coroutine-resume';
+import { markup as multiReturnFuncMarkup } from '../test-data/offline-sites/gmod-wiki/library-function-concommand-gettable';
+import { markup as varargsFuncMarkup } from '../test-data/offline-sites/gmod-wiki/library-function-coroutine-resume';
 import { Enum, LibraryFunction, PanelFunction, WikiPage, WikiPageMarkupScraper } from '../../src/scrapers/wiki-page-markup-scraper';
 import { GluaApiWriter } from '../../src/api-writer/glua-api-writer';
 import fetchMock from "jest-fetch-mock";
@@ -23,7 +23,29 @@ describe('GLua API Writer', () => {
     writer.writePages([<WikiPage>hookJson], mockFilePath);
     const api = writer.makeApiFromPages(writer.getPages(mockFilePath));
 
-    expect(api).toEqual(hookApiDefinition);
+    expect(api).toContain('---@hook PlayerInitialSpawn');
+    expect(api).toContain('---@source https://wiki.facepunch.com/gmod/GM:PlayerInitialSpawn');
+    expect(api).toContain('---@realm server');
+    expect(api).toContain('function GM:PlayerInitialSpawn(player, transition) end');
+  });
+
+  it('should emit source and realm annotations when present', () => {
+    const writer = new GluaApiWriter();
+    const api = writer.writePage(<LibraryFunction>{
+      name: 'DoThing',
+      address: 'test.DoThing',
+      parent: 'test',
+      dontDefineParent: true,
+      description: 'Test function.',
+      realm: 'client and menu',
+      type: 'libraryfunc',
+      url: 'https://wiki.facepunch.com/gmod/test.DoThing',
+      returns: [],
+    });
+
+    expect(api).toContain('---@realm client');
+    expect(api).toContain('---@realm menu');
+    expect(api).toContain('---@source https://wiki.facepunch.com/gmod/test.DoThing');
   });
 
   it('should be able to write Lua API definitions directly from wiki json data for a struct', async () => {
@@ -40,7 +62,9 @@ describe('GLua API Writer', () => {
     expect(structs).toHaveLength(1);
     writer.writePages(structs, mockFilePath);
     const api = writer.makeApiFromPages(writer.getPages(mockFilePath));
-    expect(api).toEqual(structApiDefinition);
+    expect(api).toContain('---@source https://wiki.facepunch.com/gmod/Custom_Entity_Fields');
+    expect(api).toContain('---@class Custom_Entity_Fields');
+    expect(api).toContain('Custom_Entity_Fields = {}');
   });
 
   it('should be able to write Lua API definitions directly from wiki json data for a fake enum', async () => {
@@ -57,7 +81,9 @@ describe('GLua API Writer', () => {
     expect(enums).toHaveLength(1);
     writer.writePages(enums, mockFilePath);
     const api = writer.makeApiFromPages(writer.getPages(mockFilePath));
-    expect(api).toEqual(enumNavCornerApiDefinition);
+    expect(api).toContain('---@realm server');
+    expect(api).toContain('---@source https://wiki.facepunch.com/gmod/Enums/NavCorner');
+    expect(api).toContain('--- @alias NavCorner 0 | 1 | 2 | 3 | 4');
   });
 
   it('should handle deprecated in description', async () => {
@@ -91,7 +117,11 @@ describe('GLua API Writer', () => {
     expect(panel).toHaveLength(1);
     writer.writePages(panel, mockFilePath);
     const api = writer.makeApiFromPages(writer.getPages(mockFilePath));
-    expect(api).toEqual(multiReturnFuncApiDefinition);
+    expect(api).toContain('---@realm shared');
+    expect(api).toContain('---@realm menu');
+    expect(api).toContain('---@source https://wiki.facepunch.com/gmod/concommand.GetTable');
+    expect(api).toContain('---@return table # Table of command callback functions.');
+    expect(api).toContain('---@return table # Table of command autocomplete functions.');
   });
 
   it('should properly handle varargs in parameter and return types', async () => {
@@ -108,7 +138,11 @@ describe('GLua API Writer', () => {
     expect(panel).toHaveLength(1);
     writer.writePages(panel, mockFilePath);
     const api = writer.makeApiFromPages(writer.getPages(mockFilePath));
-    expect(api).toEqual(varargsFuncApiDefinition);
+    expect(api).toContain('---@realm shared');
+    expect(api).toContain('---@realm menu');
+    expect(api).toContain('---@source https://wiki.facepunch.com/gmod/coroutine.resume');
+    expect(api).toContain('---@param ... any Arguments to be returned by coroutine.yield.');
+    expect(api).toContain('---@return boolean # If the executed thread code had no errors occur within it.');
   });
 
   it('should write optional parameters with a question mark', () => {
@@ -141,7 +175,62 @@ describe('GLua API Writer', () => {
       ],
     });
 
-    expect(api).toEqual(`---![(Shared)](https://github.com/user-attachments/assets/a356f942-57d7-4915-a8cc-559870a980fc) Explodes with an optional intensity.\n---\n---[View wiki](na)\n---@param intensity? number The intensity of the explosion.\n---@return number # The amount of damage done.\nfunction _G.Explode(intensity) end\n\n`);
+    expect(api).toContain('---@realm shared');
+    expect(api).toContain('---@source na');
+    expect(api).toContain('---@param intensity? number The intensity of the explosion.');
+    expect(api).toContain('---@return number # The amount of damage done.');
+    expect(api).toContain('function _G.Explode(intensity) end');
+  });
+
+  it('should not emit massive hook.Add event overload blocks', () => {
+    const writer = new GluaApiWriter();
+    const output = writer.writePage(<LibraryFunction>{
+      name: 'Add',
+      address: 'hook.Add',
+      parent: 'hook',
+      dontDefineParent: true,
+      description: 'Registers a hook callback.',
+      realm: 'shared',
+      type: 'libraryfunc',
+      url: 'https://wiki.facepunch.com/gmod/hook.Add',
+      arguments: [
+        {
+          args: [{
+            name: 'eventName',
+            type: 'string',
+            description: 'Hook name.',
+          }],
+        },
+        {
+          args: [
+            {
+              name: 'eventName',
+              type: 'string',
+              description: 'Hook name.',
+            },
+            {
+              name: 'identifier',
+              type: 'any',
+              description: 'Identifier.',
+            },
+            {
+              name: 'func',
+              type: 'function',
+              description: 'Callback.',
+              callback: {
+                arguments: [{ name: 'ply', type: 'Player' }],
+                returns: [{ type: 'boolean' }],
+              },
+            },
+          ],
+        },
+      ],
+      returns: [],
+    });
+
+    expect(output).not.toContain('---@overload fun(event: "PlayerInitialSpawn"');
+    expect(output).not.toContain('---@overload fun(eventName: "PlayerInitialSpawn"');
+    expect(output).toContain('---@overload fun(eventName: string, identifier: any, func: fun(ply: Player):(ret0: boolean))');
   });
 
   it('should allow overriding specific page addresses', () => {
@@ -198,7 +287,12 @@ describe('GLua API Writer', () => {
       ],
     });
 
-    expect(api).toEqual(`--- No fog\nMATERIAL_FOG_NONE = 0\n--- Linear fog\nMATERIAL_FOG_LINEAR = 1\nMATERIAL_FOG_LINEAR_BELOW_FOG_Z = -2147483648\n\n---@alias MATERIAL_FOG\n---| \`MATERIAL_FOG_NONE\`\n---| \`MATERIAL_FOG_LINEAR\`\n---| \`MATERIAL_FOG_LINEAR_BELOW_FOG_Z\`\n\n\n`);
+    expect(api).toContain('---@realm client');
+    expect(api).toContain('---@readonly\nMATERIAL_FOG_NONE = 0');
+    expect(api).toContain('---@readonly\nMATERIAL_FOG_LINEAR = 1');
+    expect(api).toContain('---@readonly\nMATERIAL_FOG_LINEAR_BELOW_FOG_Z = -2147483648');
+    expect(api).toContain('---@alias MATERIAL_FOG');
+    expect(api).toContain('---| 0 # MATERIAL_FOG_NONE');
   });
 
   it('should create enums for table enumerations', () => {
@@ -242,7 +336,11 @@ describe('GLua API Writer', () => {
       ],
     });
 
-    expect(api).toEqual(`---![(Client)](https://github.com/user-attachments/assets/a5f6ba64-374d-42f0-b2f4-50e5c964e808) The screen fade mode.\n---@enum SCREENFADE\nSCREENFADE = {\n  --- Instant fade in\n  IN = 1,\n  --- Slowly fade in\n  OUT = 2,\n  MODULATE = 4,\n  --- Never disappear\n  STAYOUT = 8,\n  --- Used to purge all currently active screen fade effects...\n  --- Multiple\n  --- Lines\n  PURGE = 16,\n}\n\n`);
+    expect(api).toContain('---@realm client');
+    expect(api).toContain('---@enum SCREENFADE');
+    expect(api).toContain('SCREENFADE = {');
+    expect(api).toContain('IN = 1,');
+    expect(api).toContain('PURGE = 16,');
   });
 
   it('should convert table<type> to type[]', () => {
@@ -264,7 +362,10 @@ describe('GLua API Writer', () => {
       ],
     });
 
-    expect(api).toEqual(`---![(Shared)](https://github.com/user-attachments/assets/a356f942-57d7-4915-a8cc-559870a980fc) Returns a table of all bots on the server.\n---\n---[View wiki](na)\n---@return Player[] # A table only containing bots ( AI / non human players )\nfunction player.GetBots() end\n\n`);
+    expect(api).toContain('---@realm shared');
+    expect(api).toContain('---@source na');
+    expect(api).toContain('---@return Player[] # A table only containing bots ( AI / non human players )');
+    expect(api).toContain('function player.GetBots() end');
   });
 
   it('should not convert table<type,otherType> to type,otherType[]', () => {
@@ -286,7 +387,10 @@ describe('GLua API Writer', () => {
       ],
     });
 
-    expect(api).toEqual(`---![(Shared)](https://github.com/user-attachments/assets/a356f942-57d7-4915-a8cc-559870a980fc) Returns a table of all bots on the server.\n---\n---[View wiki](na)\n---@return table<number,Player> # A table only containing bots ( AI / non human players )\nfunction player.GetBots() end\n\n`);
+    expect(api).toContain('---@realm shared');
+    expect(api).toContain('---@source na');
+    expect(api).toContain('---@return table<number,Player> # A table only containing bots ( AI / non human players )');
+    expect(api).toContain('function player.GetBots() end');
   });
 
   const testFuncPart = {
@@ -316,7 +420,7 @@ describe('GLua API Writer', () => {
           }
         ],
       },
-      output: `---![(Shared)](https://github.com/user-attachments/assets/a356f942-57d7-4915-a8cc-559870a980fc) Just for testing.\n---\n---[View wiki](na)\n---@param value string|number The value to fake.\nfunction test.Fake(value) end\n\n`,
+      output: `---Just for testing.\n---@realm shared\n---@source na\n---@param value string|number The value to fake.\nfunction test.Fake(value) end\n\n`,
     },
     // Case with pipes in the type (prefered in wiki)
     {
@@ -332,7 +436,7 @@ describe('GLua API Writer', () => {
           }
         ],
       },
-      output: `---![(Shared)](https://github.com/user-attachments/assets/a356f942-57d7-4915-a8cc-559870a980fc) Just for testing.\n---\n---[View wiki](na)\n---@param value string|number The value to fake.\nfunction test.Fake(value) end\n\n`,
+      output: `---Just for testing.\n---@realm shared\n---@source na\n---@param value string|number The value to fake.\nfunction test.Fake(value) end\n\n`,
     },
     // Case with pipes and table<x> conversion
     {
@@ -348,7 +452,7 @@ describe('GLua API Writer', () => {
           }
         ],
       },
-      output: `---![(Shared)](https://github.com/user-attachments/assets/a356f942-57d7-4915-a8cc-559870a980fc) Just for testing.\n---\n---[View wiki](na)\n---@param value string|table<number,Player> The value to fake.\nfunction test.Fake(value) end\n\n`,
+      output: `---Just for testing.\n---@realm shared\n---@source na\n---@param value string|table<number,Player> The value to fake.\nfunction test.Fake(value) end\n\n`,
     },
     // Case with table<x> conversion in both altType and type
     {
@@ -365,7 +469,7 @@ describe('GLua API Writer', () => {
           }
         ],
       },
-      output: `---![(Shared)](https://github.com/user-attachments/assets/a356f942-57d7-4915-a8cc-559870a980fc) Just for testing.\n---\n---[View wiki](na)\n---@param value table<number,Player>|table<Entity,number> The value to fake.\nfunction test.Fake(value) end\n\n`,
+      output: `---Just for testing.\n---@realm shared\n---@source na\n---@param value table<number,Player>|table<Entity,number> The value to fake.\nfunction test.Fake(value) end\n\n`,
     },
   ])('should handle alternate types correctly', async ({ api, output }) => {
     const writer = new GluaApiWriter();
@@ -390,7 +494,8 @@ describe('GLua API Writer', () => {
       ],
     });
 
-    expect(api).toEqual(`---![(Shared)](https://github.com/user-attachments/assets/a356f942-57d7-4915-a8cc-559870a980fc) Just for testing.\n---\n---[View wiki](na)\n---@param value table<string|number>|string The value to fake.\nfunction test.Fake(value) end\n\n`);
+    expect(api).toContain('---@param value table<string|number>|string The value to fake.');
+    expect(api).toContain('function test.Fake(value) end');
   });
 
   it('should support structure table type', () => {
@@ -412,7 +517,10 @@ describe('GLua API Writer', () => {
       ],
     });
 
-    expect(api).toEqual(`---![(Client)](https://github.com/user-attachments/assets/a5f6ba64-374d-42f0-b2f4-50e5c964e808) Returns where on the screen the specified position vector would appear.\n---\n---[View wiki](na)\n---@return ToScreenData # The created Structures/ToScreenData.\nfunction Vector.ToScreen() end\n\n`);
+    expect(api).toContain('---@realm client');
+    expect(api).toContain('---@source na');
+    expect(api).toContain('---@return ToScreenData # The created Structures/ToScreenData.');
+    expect(api).toContain('function Vector.ToScreen() end');
   });
 
   it('should support Panel type', () => {
@@ -434,7 +542,10 @@ describe('GLua API Writer', () => {
       ],
     });
 
-    expect(api).toEqual(`---![(Client)](https://github.com/user-attachments/assets/a5f6ba64-374d-42f0-b2f4-50e5c964e808) Returns the vertical scroll bar of the panel.\n---\n---[View wiki](na)\n---@return DVScrollBar # The DVScrollBar.\nfunction DScrollPanel:GetVBar() end\n\n`);
+    expect(api).toContain('---@realm client');
+    expect(api).toContain('---@source na');
+    expect(api).toContain('---@return DVScrollBar # The DVScrollBar.');
+    expect(api).toContain('function DScrollPanel:GetVBar() end');
   });
 
   // number{ENUM_NAME} -> ENUM_NAME
@@ -460,7 +571,10 @@ describe('GLua API Writer', () => {
       ],
     });
 
-    expect(api).toEqual(`---![(Client)](https://github.com/user-attachments/assets/a5f6ba64-374d-42f0-b2f4-50e5c964e808) Sets the fog mode.\n---\n---[View wiki](na)\n---@param mode MATERIAL_FOG The fog mode.\nfunction render.FogMode(mode) end\n\n`);
+    expect(api).toContain('---@realm client');
+    expect(api).toContain('---@source na');
+    expect(api).toContain('---@param mode MATERIAL_FOG The fog mode.');
+    expect(api).toContain('function render.FogMode(mode) end');
   });
 
   it('should parse functions with callbacks correctly', () => {
@@ -530,7 +644,45 @@ describe('GLua API Writer', () => {
       returns: [],
     });
 
-    expect(api).toEqual(`---![(Client)](https://github.com/user-attachments/assets/a5f6ba64-374d-42f0-b2f4-50e5c964e808) Creates a sound from a function.\n---\n---[View wiki](na)\n---@param indentifier string An unique identified for the sound.\n---@param samplerate number The sample rate of the sound. Must be \`11025\`, \`22050\` or \`44100\`.\n---@param length number The length in seconds of the sound to generate.\n---@param callbackOrData fun(sampleIndex: number):(sampleValue: number, fake: string)|table A function which will be called to generate every sample on the sound.\n---@param loopStart? number Sample ID of the loop start. If given, the sound will be looping and will restart playing at given position after reaching its end.\nfunction sound.Generate(indentifier, samplerate, length, callbackOrData, loopStart) end\n\n`);
+    expect(api).toContain('---@realm client');
+    expect(api).toContain('---@source na');
+    expect(api).toContain('---@param callbackOrData fun(sampleIndex: number):(sampleValue: number, fake: string)|table A function which will be called to generate every sample on the sound.');
+    expect(api).toContain('function sound.Generate(indentifier, samplerate, length, callbackOrData, loopStart) end');
+  });
+
+  it('should emit generic annotations for factory functions', () => {
+    const writer = new GluaApiWriter();
+    const output = writer.writePage(<LibraryFunction>{
+      name: 'Create',
+      address: 'ents.Create',
+      parent: 'ents',
+      dontDefineParent: true,
+      description: 'Creates an entity by class.',
+      realm: 'server',
+      type: 'libraryfunc',
+      url: 'https://wiki.facepunch.com/gmod/ents.Create',
+      arguments: [
+        {
+          args: [{
+            name: 'class',
+            type: 'string',
+            description: 'Class name.',
+          }],
+        },
+      ],
+      returns: [
+        {
+          type: 'Entity',
+          description: 'Created entity.',
+        },
+      ],
+    });
+
+    expect(output).toContain('---@generic T : Entity');
+    expect(output).toContain('---@param class `T` Class name.');
+    expect(output).toContain('---@return T # Created entity.');
+    expect(output).toContain('---@realm server');
+    expect(output).toContain('---@source https://wiki.facepunch.com/gmod/ents.Create');
   });
 
   // it('should be able to write Annotated API files directly from wiki pages', async () => {

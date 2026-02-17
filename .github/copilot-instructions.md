@@ -1,46 +1,42 @@
-# GMod LuaLS Addon & Scraper Instructions
+# GMod EmmyLua Annotation Generator Instructions
 
 ## Project Overview
-This repository contains two distinct components working together to provide Garry's Mod Lua support in VS Code (via LuaLS):
-1.  **Wiki Scraper (TypeScript)**: Scrapes the GMod Wiki to generate Lua definition files (`output/*.lua`).
-2.  **LuaLS Plugin (Lua)**: A runtime plugin (`plugin.lua`) for Lua Language Server that enhances analysis (custom classes, Derma, NetworkVars).
+This repository is an **annotation generator**, not a runtime plugin.
 
-**Crucial Distinction**: 
--   The **TypeScript** code (`src/`) is a build tool. It runs *before* the user uses the library.
--   The **Lua** code (`plugin.lua`) is a runtime plugin. It runs *inside* the user's IDE/LuaLS process.
+Primary responsibility:
+1. **Wiki Scraper (TypeScript)**: Scrapes the GMod Wiki to gather API metadata.
+2. **Annotation Writer (TypeScript)**: Converts metadata into EmmyLua/LuaCATS annotation files (`output/*.lua`).
+
+Generated annotations are consumed by the GMod `emmylua-analyzer-rust` language server workflow.
 
 ## Architecture
 
-### 1. Wiki Scraper (Generator)
--   **Entry Point**: `src/cli-scraper.ts`
--   **Core Logic**:
-    -   `scrapers/`: Parses wiki HTML to structured data.
-    -   `api-writer/`: Converts structured data into LuaCATS annotations (Lua files).
--   **Output**: Generates files in `output/` (e.g., `output/entity.lua`, `output/globals.lua`).
--   **Overrides**: `custom/` contains manual override files.
-    -   Files starting with `_` (e.g., `_globals.lua`) are copied directly to output.
-    -   Other files (e.g., `BaseClass.Get.lua`) are merged into the generated documentation.
+### 1. Wiki Scraper + Writer Pipeline
+- **Entry point**: `src/cli-scraper.ts`
+- **Core logic**:
+    - `scrapers/`: Parses wiki HTML/data into normalized structures.
+    - `api-writer/`: Converts normalized structures into EmmyLua/LuaCATS annotations.
+- **Output**: Generated annotation files in `output/` (e.g., `output/entity.lua`, `output/globals.lua`).
 
-### 2. LuaLS Plugin (Runtime)
--   **File**: `plugin.lua`
--   **Purpose**: Intersects LuaLS execution to provide dynamic intelligence that static files cannot (e.g., `SWEP.Base` inheritance, `NetworkVar` generation).
--   **Configuration**: Handles `config.lua` (defaults) and `.glua-api-snippets.json` (workspace overrides).
--   **Testing**: There are **NO automated tests** for the Lua plugin. Changes must be verified manually or by code review.
+### 2. Override System
+- `custom/` contains manual overrides used by generation.
+- Files prefixed with `_` (e.g., `_globals.lua`) are copied directly.
+- Other override files are merged into generated docs.
 
 ## Critical Workflows
 
-### Working with the Scraper
--   **Build & Run**: `npm run scrape-wiki` (updates `output/` folder).
--   **Testing**: `npm test` runs Jest tests in `__tests__/`. **Always run tests after modifying TypeScript**.
--   **Release**: `npm run build-plugin` (publishes library and packs release).
+### Working on generator logic
+- **Generate output**: `npm run scrape-wiki`
+- **Run tests**: `npm test` (Jest in `__tests__/`)
+- **Create release artifacts locally** (legacy): `npm run pack-release` (`*.lua.zip`)
 
-### Working with the Plugin
--   **Editing**: Edit `plugin.lua` directly.
--   **Validation**: Since there are no tests, rely on static analysis and careful logic verification.
--   **Context**: The plugin runs *inside* the Lua Language Server process. It exploits `bee.filesystem` and `parser` libraries provided by LuaLS.
+### Release behavior (GitHub Actions)
+- Releases run from `.github/workflows/release.yml`.
+- Workflow checks whether wiki data changed and publishes updated annotations to the `emmylua-annotations` branch.
+- The VSCode extension automatically downloads annotations from this branch for end-user consumption.
 
 ## Conventions & Patterns
--   **LuaCATS**: Output files use LuaCATS annotations (`---@class`, `---@field`).
--   **Wiki Parsing**: The scraper handles wiki quirks. API definitions are generated, not manually written (except `custom/`).
--   **Plugin AST**: The plugin modifies the AST (`OnSetText`, `OnTransformAst`). It splits `PANEL` locals to fix LuaLS scoping issues.
--   **Globals**: `_G` modifications should be avoided in the plugin; use locally scoped fixes where possible.
+- **EmmyLua/LuaCATS-first**: Prefer correct annotations and stable output structure.
+- **Generated-over-manual**: Most annotation content should be produced by scraper/writer logic, not hand-edited output files.
+- **Override discipline**: Use `custom/` only when generator logic cannot cleanly express the fix yet.
+- **Test coverage**: Any behavior change in scraper/writer should include or update Jest tests.

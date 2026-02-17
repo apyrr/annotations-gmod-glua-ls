@@ -10,7 +10,6 @@ import {
   isStruct,
   isEnum,
 } from '../scrapers/wiki-page-markup-scraper.js';
-import customPluginHookAdd from '../../custom/plugins/hook-add.js';
 import fs from 'fs';
 
 export const RESERVERD_KEYWORDS = new Set([
@@ -42,6 +41,13 @@ export const RESERVERD_KEYWORDS = new Set([
 type IndexedWikiPage = {
   index: number;
   page: WikiPage;
+};
+
+type FunctionGenericHint = {
+  genericTypeName: 'T';
+  classArgumentName: string;
+  baseType: 'Entity' | 'Panel';
+  returnsCollection: boolean;
 };
 
 export class GluaApiWriter {
@@ -172,15 +178,9 @@ export class GluaApiWriter {
       if (this.pageOverrides.has(classOverride)) {
         api += this.pageOverrides.get(classOverride)!.replace(/\n$/g, '') + '\n\n';
       } else {
-        if (realm) {
-          api += `---${this.formatRealm(realm)} ${description ? `${wrapInComment(description)}\n` : ''}\n`;
-        } else {
-          api += description ? `${wrapInComment(description, false)}\n` : '';
-        }
-
-        if (url) {
-          api += `---\n---[View wiki](${url})\n`;
-        }
+        api += description ? `${wrapInComment(description, false)}\n` : '';
+        api += this.writeRealmAnnotations(realm);
+        api += this.writeSourceAnnotation(url);
 
         if (deprecated)
           api += `---@deprecated ${removeNewlines(deprecated)}\n`;
@@ -260,27 +260,19 @@ export class GluaApiWriter {
   }
 
   private writeClassFunction(func: ClassFunction) {
-    let api: string = this.writeClassStart(func.parent, undefined, undefined, undefined, func.deprecated);
-
-    if (!func.arguments || func.arguments.length === 0) func.arguments = [{}];
-    for (const argSet of func.arguments) {
-      api += this.writeFunctionLuaDocComment(func, argSet.args, func.realm);
-      api += this.writeFunctionDeclaration(func, argSet.args, ':');
-    }
-
-    return api;
+    return this.writeFunctionWithOverloads(
+      func,
+      ':',
+      this.writeClassStart(func.parent, undefined, undefined, undefined, func.deprecated),
+    );
   }
 
   private writeLibraryFunction(func: LibraryFunction) {
-    let api: string = this.writeLibraryGlobalFallback(func);
-
-    if (!func.arguments || func.arguments.length === 0) func.arguments = [{}];
-    for (const argSet of func.arguments) {
-      api += this.writeFunctionLuaDocComment(func, argSet.args, func.realm);
-      api += this.writeFunctionDeclaration(func, argSet.args);
-    }
-
-    return api;
+    return this.writeFunctionWithOverloads(
+      func,
+      '.',
+      this.writeLibraryGlobalFallback(func),
+    );
   }
 
   private writeHookFunction(func: HookFunction) {
@@ -294,13 +286,20 @@ export class GluaApiWriter {
   }
 
   private writePanelFunction(func: PanelFunction) {
-    let api: string = '';
+    return this.writeFunctionWithOverloads(func, ':');
+  }
 
-    if (!func.arguments || func.arguments.length === 0) func.arguments = [{}];
-    for (const argSet of func.arguments) {
-      api += this.writeFunctionLuaDocComment(func, argSet.args, func.realm);
-      api += this.writeFunctionDeclaration(func, argSet.args, ':');
-    }
+  private writeFunctionWithOverloads(func: Function, indexer: string, prefix: string = '') {
+    let api = prefix;
+
+    const argumentSets = func.arguments && func.arguments.length > 0
+      ? func.arguments.map(argSet => argSet.args)
+      : [undefined];
+
+    const [primaryArgs, ...overloadArgs] = argumentSets;
+
+    api += this.writeFunctionLuaDocComment(func, primaryArgs, func.realm, overloadArgs);
+    api += this.writeFunctionDeclaration(func, primaryArgs, indexer);
 
     return api;
   }
@@ -314,11 +313,14 @@ export class GluaApiWriter {
         ? _enum.items[1]?.key.includes('.')
         : _enum.items[0]?.key.includes('.');
 
+    api += _enum.description ? `${wrapInComment(_enum.description, false)}\n` : '';
+    api += this.writeRealmAnnotations(_enum.realm);
+    api += this.writeSourceAnnotation(_enum.url);
+
     if (_enum.deprecated)
       api += `---@deprecated ${removeNewlines(_enum.deprecated)}\n`;
 
     if (isContainedInTable) {
-      api += `---${this.formatRealm(_enum.realm)} ${_enum.description ? `${wrapInComment(_enum.description)}` : ''}\n`;
       api += `---@enum ${_enum.name}\n`;
       api += `${_enum.name} = {\n`;
     }
@@ -347,6 +349,9 @@ export class GluaApiWriter {
         api += item.description ? `${wrapInComment(item.description, false)}\n` : '';
         if (item.deprecated)
           api += `---@deprecated ${removeNewlines(item.deprecated)}\n`;
+
+        // Advanced annotation: top-level enum entries are immutable engine constants.
+        api += `---@readonly\n`;
         api += `${key} = ${item.value}\n`;
       }
     };
@@ -366,8 +371,6 @@ export class GluaApiWriter {
       // Some enums like SNDLVL are fake in the wiki and only listed for reference, so we render those such that the enums
       // are explained in the annotation
       if (this.isFakeEnum(_enum)) {
-        // First output the description
-        api += `---${this.formatRealm(_enum.realm)} ${_enum.description ? `${wrapInComment(_enum.description)}` : ''}\n`;
         let enumValues = '';
 
         for (const item of _enum.items) {
@@ -378,18 +381,14 @@ export class GluaApiWriter {
         }
 
         enumValues = enumValues.slice(0, -3); // Remove trailing " | "
-
-        // Add wikilink
-        api += `---\n--- [View wiki](${_enum.url})\n`;
         api += `--- @alias ${_enum.name} ${enumValues}\n`;
       } else {
-        // LuaLS doesn't nicely display annotations for aliasses, hence this is commented
-        //api += `\n---${this.formatRealm(_enum.realm)} ${_enum.description ? `${wrapInComment(_enum.description)}` : ''}\n`;
+        // Advanced annotation: emit numeric literals to help literal-type inference for enum-backed numbers.
         api += `\n---@alias ${_enum.name}\n`;
 
         for (const item of _enum.items) {
           if (item.key !== '' && !isNaN(Number(item.value.trim()))) {
-            api += `---| \`${item.key}\`\n`;
+            api += `---| ${item.value} # ${item.key}\n`;
           }
         }
       }
@@ -582,32 +581,163 @@ export class GluaApiWriter {
     return type;
   }
 
-  private formatRealm(realm: Realm) {
-    // Formats to show the image, with the realm as the alt text
+  private getRealmTags(realm: Realm): string[] {
     switch (realm) {
       case 'menu':
-        return '![(Menu)](https://github.com/user-attachments/assets/62703d98-767e-4cf2-89b3-390b1c2c5cd9)';
+        return ['menu'];
       case 'client':
-        return '![(Client)](https://github.com/user-attachments/assets/a5f6ba64-374d-42f0-b2f4-50e5c964e808)';
+        return ['client'];
       case 'server':
-        return '![(Server)](https://github.com/user-attachments/assets/d8fbe13a-6305-4e16-8698-5be874721ca1)';
+        return ['server'];
       case 'shared':
-        return '![(Shared)](https://github.com/user-attachments/assets/a356f942-57d7-4915-a8cc-559870a980fc)';
+        return ['shared'];
       case 'client and menu':
-        return '![(Client and menu)](https://github.com/user-attachments/assets/25d1a1c8-4288-4a51-9867-5e3bb51b9981)';
+        return ['client', 'menu'];
       case 'shared and menu':
-        return '![(Shared and Menu)](https://github.com/user-attachments/assets/8f5230ff-38f7-493b-b9fc-cc70ffd5b3f4)';
+        return ['shared', 'menu'];
       default:
         throw new Error(`Unknown realm: ${realm}`);
     }
   }
 
-  private writeFunctionLuaDocComment(func: Function, args: FunctionArgument[] | undefined, realm: Realm) {
-    let luaDocComment = `---${this.formatRealm(realm)} ${wrapInComment(func.description!)}\n`;
-    luaDocComment += `---\n---[View wiki](${func.url})\n`;
+  private writeRealmAnnotations(realm?: Realm): string {
+    if (!realm)
+      return '';
+
+    return this.getRealmTags(realm)
+      .map(realmTag => `---@realm ${realmTag}\n`)
+      .join('');
+  }
+
+  private writeSourceAnnotation(url?: string): string {
+    if (!url)
+      return '';
+
+    return `---@source ${url}\n`;
+  }
+
+  private getFunctionGenericHint(func: Function, args: FunctionArgument[] | undefined): FunctionGenericHint | undefined {
+    if (!args || args.length === 0 || !func.returns || func.returns.length !== 1)
+      return undefined;
+
+    const classArgument = args.find(arg => arg.name === 'class' && arg.type === 'string' && !arg.altType && !arg.callback);
+    if (!classArgument)
+      return undefined;
+
+    const transformedReturnType = GluaApiWriter.transformType(func.returns[0].type, func.returns[0].callback);
+
+    if (transformedReturnType === 'Entity' || transformedReturnType === 'Panel') {
+      return {
+        genericTypeName: 'T',
+        classArgumentName: classArgument.name!,
+        baseType: transformedReturnType,
+        returnsCollection: false,
+      };
+    }
+
+    if (transformedReturnType === 'Entity[]' || transformedReturnType === 'Panel[]') {
+      return {
+        genericTypeName: 'T',
+        classArgumentName: classArgument.name!,
+        baseType: transformedReturnType.replace('[]', '') as 'Entity' | 'Panel',
+        returnsCollection: true,
+      };
+    }
+
+    return undefined;
+  }
+
+  private getArgumentTypes(arg: FunctionArgument): string[] {
+    const types = arg.type.split('|');
+
+    if (arg.altType) {
+      types.push(arg.altType);
+    }
+
+    return types;
+  }
+
+  private getArgumentTypeString(arg: FunctionArgument): string {
+    return this.getArgumentTypes(arg)
+      .map(type => GluaApiWriter.transformType(type, arg.callback))
+      .join('|');
+  }
+
+  private getOverloadSignature(func: Function, args: FunctionArgument[] | undefined): string {
+    const overloadArgs = args ?? [];
+
+    const argumentSignature = overloadArgs.map(arg => {
+      if (!arg.name)
+        arg.name = arg.type;
+
+      if (arg.type === 'vararg')
+        return '...: any';
+
+      const typesString = this.getArgumentTypeString(arg);
+      return `${GluaApiWriter.safeName(arg.name)}${arg.default !== undefined ? `?` : ''}: ${typesString}`;
+    }).join(', ');
+
+    const returns = func.returns ?? [];
+    if (returns.length === 0) {
+      return `fun(${argumentSignature})`;
+    }
+
+    if (returns.length === 1) {
+      const ret = returns[0];
+      const retType = ret.type === 'vararg'
+        ? 'any'
+        : GluaApiWriter.transformType(ret.type, ret.callback);
+      return `fun(${argumentSignature}): ${retType}`;
+    }
+
+    const returnSignature = returns.map((ret, index) => {
+      if (ret.type === 'vararg')
+        return '...: any';
+
+      const returnName = ret.name ? GluaApiWriter.safeName(ret.name) : `ret${index}`;
+      return `${returnName}: ${GluaApiWriter.transformType(ret.type, ret.callback)}`;
+    }).join(', ');
+
+    return `fun(${argumentSignature}):(${returnSignature})`;
+  }
+
+  private writeOverloadAnnotations(func: Function, overloadArgs: Array<FunctionArgument[] | undefined>): string {
+    if (overloadArgs.length === 0) {
+      return '';
+    }
+
+    // Advanced annotation: multiple scraped argument sets represent real call-shape overloads.
+    return overloadArgs
+      .map(args => `---@overload ${this.getOverloadSignature(func, args)}\n`)
+      .join('');
+  }
+
+  private writeFunctionLuaDocComment(
+    func: Function,
+    args: FunctionArgument[] | undefined,
+    realm: Realm,
+    overloadArgs: Array<FunctionArgument[] | undefined> = [],
+  ) {
+    let luaDocComment = '';
+
+    if (func.description)
+      luaDocComment += `---${wrapInComment(func.description)}\n`;
+
+    if (isHookFunction(func))
+      luaDocComment += `---@hook ${func.name}\n`;
+
+    luaDocComment += this.writeRealmAnnotations(realm);
+    luaDocComment += this.writeSourceAnnotation(func.url);
+    luaDocComment += this.writeOverloadAnnotations(func, overloadArgs);
+
+    const genericHint = this.getFunctionGenericHint(func, args);
+    if (genericHint) {
+      // Advanced annotation: this signature carries a concrete class-string -> instance type relationship.
+      luaDocComment += `---@generic ${genericHint.genericTypeName} : ${genericHint.baseType}\n`;
+    }
 
     if (args) {
-      args.forEach((arg, index) => {
+      args.forEach(arg => {
         if (!arg.name)
           arg.name = arg.type;
 
@@ -616,29 +746,27 @@ export class GluaApiWriter {
 
         // TODO: This splitting will fail in complicated cases like `table<string|number>|string`.
         // TODO: I'm assuming for now that there is no such case in the GMod API.
-        // Split any existing types, append the (deprecated) alt and join them back together
-        // while transforming each type to a LuaLS compatible type.
-        let types = arg.type.split('|');
-
-        if (arg.altType) {
-          types.push(arg.altType);
+        let typesString = this.getArgumentTypeString(arg);
+        if (genericHint && arg.name === genericHint.classArgumentName) {
+          typesString = `\`${genericHint.genericTypeName}\``;
         }
-
-        let typesString = types.map(type => GluaApiWriter.transformType(type, arg.callback))
-          .join('|');
 
         luaDocComment += `---@param ${GluaApiWriter.safeName(arg.name)}${arg.default !== undefined ? `?` : ''} ${typesString} ${wrapInComment(arg.description!)}\n`;
       });
     }
 
     if (func.returns) {
-      func.returns.forEach(ret => {
+      func.returns.forEach((ret, index) => {
         const description = wrapInComment(ret.description!);
 
         luaDocComment += `---@return `;
 
         if (ret.type === 'vararg')
           luaDocComment += 'any ...';
+        else if (genericHint && index === 0)
+          luaDocComment += genericHint.returnsCollection
+            ? `${genericHint.genericTypeName}[]`
+            : genericHint.genericTypeName;
         else
           luaDocComment += `${GluaApiWriter.transformType(ret.type, ret.callback)}`;
 
@@ -648,12 +776,6 @@ export class GluaApiWriter {
 
     if (func.deprecated)
       luaDocComment += `---@deprecated ${removeNewlines(func.deprecated)}\n`;
-
-    // TODO: Write a nice API to allow customizing API output from custom/
-    // See https://github.com/luttje/glua-api-snippets/issues/65
-    if (func.address === 'hook.Add') {
-      luaDocComment += customPluginHookAdd(this, func);
-    }
 
     return luaDocComment;
   }

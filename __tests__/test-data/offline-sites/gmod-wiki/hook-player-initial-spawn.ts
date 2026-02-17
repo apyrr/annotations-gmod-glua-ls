@@ -192,7 +192,9 @@ GM = {}
 --- end )
 --- \`\`\`
 ---
----[View wiki](https://wiki.facepunch.com/gmod/GM:PlayerInitialSpawn)
+---@hook PlayerInitialSpawn
+---@realm server
+---@source https://wiki.facepunch.com/gmod/GM:PlayerInitialSpawn
 ---@param player Player The player who spawned.
 ---@param transition boolean If \`true\`, the player just spawned from a map transition.
 function GM:PlayerInitialSpawn(player, transition) end\n\n`;

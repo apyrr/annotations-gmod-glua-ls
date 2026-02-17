@@ -11,7 +11,7 @@ async function main() {
   program
     .version(packageJson.version)
     .description('Releases the previously scraped Garry\'s Mod wiki API information')
-    .option('-i, --input <path>', 'The path to the directory where the output json and lua files have been saved', './output')
+    .option('-i, --input <path>', 'The path to the directory where the output lua annotation files have been saved', './output')
     .option('-o, --output <path>', 'The path to the directory where the release should be saved', './dist/release')
     .parse(process.argv);
 
@@ -32,34 +32,23 @@ async function main() {
   console.log(`Building release for ${metadata.lastUpdate}...`);
 
   let releaseFiles: string[] = [];
-  const targets = [
-    'json',
-    'lua',
-  ];
 
   const baseFileName = dateToFilename(metadata.lastUpdate);
+  const files = walk(options.input, (file, isDirectory) => {
+    if (isDirectory) return true;
+    if (!file.endsWith('.lua')) return false;
 
-  for (const target of targets) {
-    const files = walk(options.input, (file, isDirectory) => {
-      if (isDirectory) return true;
-      if (file.endsWith(`.${target}`)) return true;
-      if (file.endsWith('__metadata.json')) return true;
+    const relativePath = path.relative(options.input, file).replace(/\\/g, '/');
+    if (relativePath === 'plugin.lua' || relativePath === 'config.lua') return false;
+    if (relativePath.startsWith('plugin/')) return false;
 
-      // Include plugin files for lua target (now copied to input directory by publish-library)
-      if (target === 'lua') {
-        const relativePath = path.relative(options.input, file);
-        if (relativePath === 'plugin.lua' || relativePath === 'config.lua') return true;
-        if (relativePath.startsWith('plugin/') && relativePath.endsWith('.lua')) return true;
-      }
+    return true;
+  });
+  const targetPath = path.join(options.output, `${baseFileName}.lua.zip`);
 
-      return false;
-    });
-    const targetPath = path.join(options.output, `${baseFileName}.${target}.zip`);
+  await zipFiles(targetPath, files, options.input);
 
-    await zipFiles(targetPath, files, options.input);
-
-    releaseFiles.push(convertWindowsToUnixPath(targetPath));
-  }
+  releaseFiles.push(convertWindowsToUnixPath(targetPath));
 
   // Write the release file name to a file so the GitHub action can read it.
   fs.writeFileSync(path.join(options.output, 'release.json'), JSON.stringify({

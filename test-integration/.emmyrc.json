@@ -1,0 +1,11 @@
+{
+    "workspace": {
+        "library": [
+            "../output"
+        ]
+    },
+    "gmod": {
+        "enabled": true,
+        "defaultRealm": "shared"
+    }
+}
