@@ -1,0 +1,9 @@
+---Creates a panel from a table, used alongside vgui.RegisterFile and vgui.RegisterTable to efficiently define, register, and instantiate custom panels.
+---@realm client
+---@realm menu
+---@source https://wiki.facepunch.com/gmod/vgui.CreateFromTable
+---@param metatable table Your PANEL table.
+---@param parent? Panel Which panel to parent the newly created panel to.
+---@param name? string Custom name of the created panel for scripting/debugging purposes. Can be retrieved with Panel:GetName.
+---@return (instance) Panel # The created panel, or `nil` if creation failed for whatever reason.
+function vgui.CreateFromTable(metatable, parent, name) end

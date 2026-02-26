@@ -1,13 +1,14 @@
----![(Shared and Menu)](https://github.com/user-attachments/assets/8f5230ff-38f7-493b-b9fc-cc70ffd5b3f4) Returns the meta table for the class with the matching name.
+---Returns the meta table for the class with the matching name.
 ---
 --- You can learn more about meta tables on the [Meta Tables](https://wiki.facepunch.com/gmod/Meta_Tables) page.
 ---
 --- You can find a list of meta tables that can be retrieved with this function on [Enums/TYPE](https://wiki.facepunch.com/gmod/Enums/TYPE). The name in the description is the string to use with this function.
 ---
 --- Custom meta tables should be registered via [Global.RegisterMetaTable](https://wiki.facepunch.com/gmod/Global.RegisterMetaTable).
----
----[View wiki](https://wiki.facepunch.com/gmod/Global.FindMetaTable)
+---@realm shared
+---@realm menu
+---@source https://wiki.facepunch.com/gmod/Global.FindMetaTable
 ---@generic T : table
 ---@param metaName `T` The object type to retrieve the meta table of.
----@return T|nil # The corresponding meta table or `nil` if it doesn't exist.
+---@return (definition) T|nil # The corresponding meta table or `nil` if it doesn't exist.
 function _G.FindMetaTable(metaName) end

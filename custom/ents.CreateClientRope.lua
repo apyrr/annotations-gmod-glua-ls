@@ -1,0 +1,19 @@
+---Creates a clientside only rope, similar to those used by the Dog and Fast Zombie models from Half-Life 2.
+---
+--- Created ropes will be automatically cleaned up when one of the attached entities is removed.
+---
+--- **WARNING**: It doesn't work exactly the same way as [constraint.CreateKeyframeRope](https://wiki.facepunch.com/gmod/constraint.CreateKeyframeRope) or [constraint.Rope](https://wiki.facepunch.com/gmod/constraint.Rope), you can see it when you try to use Slack with [constraint.CreateKeyframeRope](https://wiki.facepunch.com/gmod/constraint.CreateKeyframeRope) or addlength on [constraint.Rope](https://wiki.facepunch.com/gmod/constraint.Rope).
+---@realm client
+---@source https://wiki.facepunch.com/gmod/ents.CreateClientRope
+---@param ent1 Entity The first entity to attach the rope to.
+---@param ent1attach number|Vector The attachment ID on the first entity to attach the rope to, or a local Vector relative to the first entity.
+---@param ent2 Entity The second entity to attach the rope to.
+---@param ent2attach number|Vector The attachment ID on the second entity to attach the rope to, or a local Vector relative to the second entity.
+---@param extra? table Extra optional settings for the rope. Possible values are:
+--- * slack - How much extra rope to add to the length. (default: 0)
+--- * width - Width of the rope. (default: 2)
+--- * segments - How many segments the rope should have (default: 8, valid range is [2,10])
+--- * material - Which material should the rope have. (default: `"cable/cable"`)
+--- * nogravity - If set, the rope should have no gravity. (default: 0)
+---@return (instance) Entity # Created entity (`C_RopeKeyframe`).
+function ents.CreateClientRope(ent1, ent1attach, ent2, ent2attach, extra) end

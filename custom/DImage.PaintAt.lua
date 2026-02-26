@@ -1,4 +1,6 @@
 ---Paints a ghost copy of the DImage panel at the given position and dimensions. This function overrides [Panel:PaintAt](https://wiki.facepunch.com/gmod/Panel:PaintAt).
+---@realm client
+---@realm menu
 ---@source https://wiki.facepunch.com/gmod/DImage:PaintAt
 ---@param posX number The x coordinate to draw the panel from.
 ---@param posY number The y coordinate to draw the panel from.

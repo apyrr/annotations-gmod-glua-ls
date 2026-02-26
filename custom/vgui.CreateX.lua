@@ -1,0 +1,11 @@
+---**INTERNAL**: This is used internally - although you're able to use it you probably shouldn't.
+--- Creates an engine panel.
+---@realm client
+---@realm menu
+---@source https://wiki.facepunch.com/gmod/vgui.CreateX
+---@generic T : Panel
+---@param class `T` Class of the panel to create
+---@param parent? Panel If specified, parents created panel to given one
+---@param name? string Name of the created panel
+---@return (instance) T # Created panel
+function vgui.CreateX(class, parent, name) end
