@@ -65,6 +65,14 @@ BRANCH = nil
 ---Current Lua version. This contains "Lua 5.1" in GMod at the moment.
 _VERSION = nil
 
+---@type number
+---Contains the maximum number of bits needed to network any entity.
+MAX_EDICT_BITS = nil
+
+---@type number
+---Contains the maximum number of bits needed to network player. Depends on the maximum slots count on the server
+MAX_PLAYER_BITS = nil
+
 ---@type ENT
 ---The active env_skypaint entity. [(View Source)](https://github.com/Facepunch/garrysmod/blob/master/garrysmod/gamemodes/base/entities/entities/env_skypaint.lua#L131)
 g_SkyPaint = nil
