@@ -186,7 +186,7 @@ export class GluaApiWriter {
         if (deprecated)
           api += `---@deprecated ${removeNewlines(deprecated)}\n`;
 
-        api += `---@class ${canonicalClassName}`;
+        api += `---@class (partial) ${canonicalClassName}`;
 
         if (parent)
           api += ` : ${parent}`;
@@ -203,7 +203,7 @@ export class GluaApiWriter {
         if (this.hasClassAliases(canonicalClassName)) {
           const aliases = this.getClassAliases(canonicalClassName);
           for (const alias of aliases) {
-            api += `---@class ${alias} : ${canonicalClassName}\n`;
+            api += `---@class (partial) ${alias} : ${canonicalClassName}\n`;
             api += `${alias} = ${canonicalClassName}\n`;
           }
         }
