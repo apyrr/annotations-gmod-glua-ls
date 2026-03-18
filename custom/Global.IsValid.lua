@@ -1,0 +1,16 @@
+---Returns whether an object is valid or not. (Such as [entities](https://wiki.facepunch.com/gmod/Entity), [Panel](https://wiki.facepunch.com/gmod/Panel)s, custom [table](https://wiki.facepunch.com/gmod/table) objects and more).
+---
+--- Checks that an object is not [nil](https://wiki.facepunch.com/gmod/nil), has an `IsValid` method and if this method returns `true`. If the object has no `IsValid` method, it will return `false`.
+---
+--- **NOTE**: If you are sure that the object you are about to check is not `nil` and has the `IsValid` method, it would be more faster to call it directly rather than using `IsValid`.
+---
+--- **NOTE**: Due to vehicles being technically valid the moment they're spawned, also use [Vehicle:IsValidVehicle](https://wiki.facepunch.com/gmod/Vehicle:IsValidVehicle) to make sure they're fully initialized.
+---
+--- **WARNING**: Putting a number in the argument will cause an error.
+---@realm shared
+---@realm menu
+---@source https://wiki.facepunch.com/gmod/Global.IsValid
+---@generic T
+---@param toBeValidated T The table or object to be validated.
+---@return std.NotNull<T> # True if the object is valid.
+function _G.IsValid(toBeValidated) end
