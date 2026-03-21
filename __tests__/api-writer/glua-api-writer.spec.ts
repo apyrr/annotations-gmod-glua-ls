@@ -679,7 +679,7 @@ describe('GLua API Writer', () => {
     });
 
     expect(output).toContain('---@generic T : Entity');
-    expect(output).toContain('---@param class `T` Class name.');
+    expect(output).toContain('---@param class T Class name.');
     expect(output).toContain('---@return T # Created entity.');
     expect(output).toContain('---@realm server');
     expect(output).toContain('---@source https://wiki.facepunch.com/gmod/ents.Create');

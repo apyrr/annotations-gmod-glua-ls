@@ -750,9 +750,8 @@ export class GluaApiWriter {
         // TODO: This splitting will fail in complicated cases like `table<string|number>|string`.
         // TODO: I'm assuming for now that there is no such case in the GMod API.
         let typesString = this.getArgumentTypeString(arg);
-        if (genericHint && arg.name === genericHint.classArgumentName) {
-          typesString = `\`${genericHint.genericTypeName}\``;
-        }
+        if (genericHint && arg.name === genericHint.classArgumentName)
+          typesString = genericHint.genericTypeName;
 
         luaDocComment += `---@param ${GluaApiWriter.safeName(arg.name)}${arg.default !== undefined ? `?` : ''} ${typesString} ${wrapInComment(arg.description!)}\n`;
       });
