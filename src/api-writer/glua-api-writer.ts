@@ -372,20 +372,22 @@ export class GluaApiWriter {
       // Some enums like SNDLVL are fake in the wiki and only listed for reference, so we render those such that the enums
       // are explained in the annotation
       if (this.isFakeEnum(_enum)) {
-        let enumValues = '';
+        const enumValues: string[] = [];
 
         for (const item of _enum.items) {
           if (item.key !== '' && !isNaN(Number(item.value.trim()))) {
             api += `--- * \`${item.key}\` = \`${item.value}\`\n`;
-            enumValues += `${item.value} | `;
+            enumValues.push(item.value);
           }
         }
 
-        enumValues = enumValues.slice(0, -3); // Remove trailing " | "
-        api += `--- @alias ${_enum.name} ${enumValues}\n`;
+        const literalUnion = enumValues.join(' | ');
+        const enumAliasValue = literalUnion.length > 0 ? `${literalUnion} | number` : 'number';
+        api += `--- @alias ${_enum.name} ${enumAliasValue}\n`;
       } else {
         // Advanced annotation: emit numeric literals to help literal-type inference for enum-backed numbers.
         api += `\n---@alias ${_enum.name}\n`;
+        api += '---| number # Raw numeric enum value\n';
 
         for (const item of _enum.items) {
           if (item.key !== '' && !isNaN(Number(item.value.trim()))) {

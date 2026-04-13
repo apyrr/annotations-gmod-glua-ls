@@ -83,7 +83,7 @@ describe('GLua API Writer', () => {
     const api = writer.makeApiFromPages(writer.getPages(mockFilePath));
     expect(api).toContain('---@realm server');
     expect(api).toContain('---@source https://wiki.facepunch.com/gmod/Enums/NavCorner');
-    expect(api).toContain('--- @alias NavCorner 0 | 1 | 2 | 3 | 4');
+    expect(api).toContain('--- @alias NavCorner 0 | 1 | 2 | 3 | 4 | number');
   });
 
   it('should handle deprecated in description', async () => {
@@ -292,6 +292,7 @@ describe('GLua API Writer', () => {
     expect(api).toContain('---@readonly\nMATERIAL_FOG_LINEAR = 1');
     expect(api).toContain('---@readonly\nMATERIAL_FOG_LINEAR_BELOW_FOG_Z = -2147483648');
     expect(api).toContain('---@alias MATERIAL_FOG');
+    expect(api).toContain('---| number # Raw numeric enum value');
     expect(api).toContain('---| 0 # MATERIAL_FOG_NONE');
   });
 
