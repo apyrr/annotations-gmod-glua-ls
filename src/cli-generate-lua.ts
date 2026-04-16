@@ -85,6 +85,9 @@ async function main() {
     for (const jsonPath of moduleEntry.jsonFiles) {
       const content = fs.readFileSync(jsonPath, { encoding: 'utf-8' });
       const pages = JSON.parse(content);
+      if (!Array.isArray(pages)) {
+        continue;
+      }
       writer.writePages(pages, moduleLuaPath, pageIndex++);
     }
   }

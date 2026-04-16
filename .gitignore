@@ -6,6 +6,8 @@ dist/esm/
 dist/release/
 coverage
 output
+output-plugins
+plugin/index.json
 
 .vscode/launch.json
 .vscode/mcp.json

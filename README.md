@@ -65,5 +65,11 @@ For local language server testing, generate annotations and point your workspace
 
 - `src/scrapers/` - GMod wiki scraping and normalization
 - `src/api-writer/` - EmmyLua/LuaCATS annotation generation
+- `plugin/` - framework plugin metadata + gluarc fragments consumed by the VSCode extension
 - `custom/` - manual overrides merged during generation
 - `output/` - generated annotation files (published to `gluals-annotations` branch)
+
+## Plugin Metadata Notes
+
+The VSCode extension loads plugin metadata from the annotation bundle (`plugin/index.json` + `plugin/<id>/plugin.json`).
+Plugin apply remains extension-only; the language server does not resolve plugins at runtime.

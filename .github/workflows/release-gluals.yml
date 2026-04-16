@@ -32,6 +32,22 @@ jobs:
             meta.lastUpdate = '${{ steps.build_ts.outputs.value }}';
             fs.writeFileSync('output/__metadata.json', JSON.stringify(meta, null, 2));
           "
+      - name: Regenerate Lua + plugin artifacts metadata
+        run: |
+          npm run generate-lua -- \
+            --output ./output \
+            --customOverrides ./custom \
+            --wipeLua
+          npm run generate-plugin-index
+          npm run generate-plugin-artifacts -- \
+            --pluginRoot ./plugin \
+            --indexOutput ./plugin/index.json \
+            --annotationsOutput ./output \
+            --pluginBundlesOutput ./output-plugins \
+            --branchPrefix gluals-annotations-plugin- \
+            --artifactManifest plugin.json \
+            --version "${{ steps.build_ts.outputs.value }}" \
+            --generatedAt "${{ steps.build_ts.outputs.value }}"
       - name: Run tests
         run: npm test
       - name: Format the output with StyLua
@@ -55,26 +71,40 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Stash only the final .lua files + metadata to a temp dir before switching branches.
-          # This is necessary because `git rm -rf .` only removes tracked files; output/ is
-          # gitignored (untracked) so it survives, causing duplicates when git add -A picks it up.
           tmpdir=$(mktemp -d)
-          find output/ -maxdepth 1 -type f -name '*.lua' -exec cp {} "$tmpdir/" \;
-          cp output/__metadata.json "$tmpdir/"
+          base_dir="$tmpdir/base"
+          plugin_stage_dir="$tmpdir/plugins"
+          mkdir -p "$base_dir/plugin" "$plugin_stage_dir"
 
-          # Create orphan branch, then wipe EVERYTHING (tracked + untracked + ignored)
-          git checkout --orphan gluals-annotations
-          git rm -rf .
-          git clean -fdx
+          # Stage base annotation branch payload (core lua + metadata + plugin index only).
+          find output/ -maxdepth 1 -type f -name '*.lua' -exec cp {} "$base_dir/" \;
+          cp output/__metadata.json "$base_dir/"
+          cp output/plugin/index.json "$base_dir/plugin/index.json"
+          if [ -d output-plugins ]; then
+            cp -R output-plugins/. "$plugin_stage_dir/"
+          fi
 
-          # Restore only the final annotation files
-          cp "$tmpdir/"*.lua .
-          cp "$tmpdir/__metadata.json" .
-          git add -A
+          publish_branch() {
+            local branch_name="$1"
+            local source_dir="$2"
+            local commit_message="$3"
 
-          # Commit with timestamp
-          commitMsg="Update GLuaLS annotations - $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git commit -m "$commitMsg"
+            git checkout --orphan "$branch_name"
+            git rm -rf .
+            git clean -fdx
 
-          # Force push to publish
-          git push -f origin gluals-annotations
+            cp -R "$source_dir/." .
+            git add -A
+            git commit -m "$commit_message"
+            git push -f origin "$branch_name"
+          }
+
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          publish_branch "gluals-annotations" "$base_dir" "Update GLuaLS annotations - $now"
+
+          for plugin_dir in "$plugin_stage_dir"/*; do
+            [ -d "$plugin_dir" ] || continue
+            plugin_id="$(basename "$plugin_dir")"
+            plugin_branch="gluals-annotations-plugin-${plugin_id}"
+            publish_branch "$plugin_branch" "$plugin_dir" "Update ${plugin_id} plugin annotations - $now"
+          done

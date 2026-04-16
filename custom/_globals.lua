@@ -9,6 +9,8 @@
 ---@type GM
 GAMEMODE = nil
 
+---@alias GPlayer Player
+
 --- Contains a list of all modules loaded from /modules/.
 ---@type table<string, any>
 _MODULES = nil

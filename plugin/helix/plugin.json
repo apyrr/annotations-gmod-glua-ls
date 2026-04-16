@@ -1,0 +1,18 @@
+{
+  "id": "helix",
+  "label": "Helix",
+  "description": "Helix plugin metadata and additive .gluarc scopes",
+  "detection": {
+    "gamemodeBases": [
+      "helix",
+      "nutscript"
+    ],
+    "folderNamePatterns": [
+      "helix",
+      "hl2rp",
+      "nutscript"
+    ]
+  },
+  "gluarcPath": "gluarc.json",
+  "annotationsPath": "annotations"
+}

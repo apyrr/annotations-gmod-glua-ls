@@ -1,0 +1,16 @@
+{
+  "id": "darkrp",
+  "label": "DarkRP",
+  "description": "DarkRP plugin metadata and optional annotation bundle",
+  "detection": {
+    "gamemodeBases": [
+      "darkrp"
+    ],
+    "folderNamePatterns": [
+      "darkrp",
+      "drp"
+    ]
+  },
+  "gluarcPath": "gluarc.json",
+  "annotationsPath": "annotations"
+}
