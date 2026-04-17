@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - gluals-gmod
+      - main
   schedule:
     - cron: "0 0 1 * *"
 jobs:

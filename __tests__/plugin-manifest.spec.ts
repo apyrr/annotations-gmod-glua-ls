@@ -31,7 +31,17 @@ describe('plugin manifests', () => {
       const hasBaseSignals = !!bundle.manifest.detection.gamemodeBases?.length;
       const hasFolderSignals = !!bundle.manifest.detection.folderNamePatterns?.length;
       const hasManifestSignals = !!bundle.manifest.detection.manifestPatterns?.length;
-      expect(hasBaseSignals || hasFolderSignals || hasManifestSignals).toBe(true);
+      const hasFileNameSignals = !!bundle.manifest.detection.fileNamePatterns?.length;
+      const hasGlobalNameSignals = !!bundle.manifest.detection.globalNames?.length || !!bundle.manifest.detection.globals?.length;
+      const hasGlobalPatternSignals = !!bundle.manifest.detection.globalPatterns?.length;
+      expect(
+        hasBaseSignals ||
+        hasFolderSignals ||
+        hasManifestSignals ||
+        hasFileNameSignals ||
+        hasGlobalNameSignals ||
+        hasGlobalPatternSignals,
+      ).toBe(true);
       expect(bundle.manifest.label).toBeTruthy();
       expect(typeof bundle.manifest.description).toBe('string');
     }
@@ -64,7 +74,17 @@ describe('plugin manifests', () => {
       const hasBaseSignals = !!plugin.detection.gamemodeBases?.length;
       const hasFolderSignals = !!plugin.detection.folderNamePatterns?.length;
       const hasManifestSignals = !!plugin.detection.manifestPatterns?.length;
-      expect(hasBaseSignals || hasFolderSignals || hasManifestSignals).toBe(true);
+      const hasFileNameSignals = !!plugin.detection.fileNamePatterns?.length;
+      const hasGlobalNameSignals = !!plugin.detection.globalNames?.length;
+      const hasGlobalPatternSignals = !!plugin.detection.globalPatterns?.length;
+      expect(
+        hasBaseSignals ||
+        hasFolderSignals ||
+        hasManifestSignals ||
+        hasFileNameSignals ||
+        hasGlobalNameSignals ||
+        hasGlobalPatternSignals,
+      ).toBe(true);
     }
   });
 

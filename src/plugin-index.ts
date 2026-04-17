@@ -5,10 +5,15 @@ export type SourcePluginManifest = {
   id: string;
   label: string;
   description?: string;
+  kind?: string;
   detection: {
     gamemodeBases?: string[];
     folderNamePatterns?: string[];
     manifestPatterns?: string[];
+    fileNamePatterns?: string[];
+    globalNames?: string[];
+    globalPatterns?: string[];
+    globals?: string[];
   };
   gluarcPath?: string;
   gluarc?: string;
@@ -19,10 +24,14 @@ export type GeneratedPluginIndexEntry = {
   id: string;
   label: string;
   description: string;
+  kind?: string;
   detection: {
     gamemodeBases?: string[];
     folderNamePatterns?: string[];
     manifestPatterns?: string[];
+    fileNamePatterns?: string[];
+    globalNames?: string[];
+    globalPatterns?: string[];
   };
   artifact: {
     branch: string;
@@ -53,6 +62,7 @@ export type BuildPluginIndexOptions = {
 export const DEFAULT_PLUGIN_BRANCH_PREFIX = 'gluals-annotations-plugin-';
 export const DEFAULT_PLUGIN_ARTIFACT_MANIFEST = 'plugin.json';
 const PLUGIN_ID_REGEX = /^[a-z0-9][a-z0-9-]*$/;
+const VALID_PLUGIN_KINDS = new Set(['framework', 'gamemode', 'addon', 'library']);
 
 function asString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -80,11 +90,20 @@ function normalizeDetection(value: unknown): GeneratedPluginIndexEntry['detectio
   const gamemodeBases = asStringArray(value.gamemodeBases);
   const folderNamePatterns = asStringArray(value.folderNamePatterns);
   const manifestPatterns = asStringArray(value.manifestPatterns);
+  const fileNamePatterns = asStringArray(value.fileNamePatterns);
+  const globalNames = [
+    ...asStringArray(value.globalNames),
+    ...asStringArray(value.globals),
+  ];
+  const globalPatterns = asStringArray(value.globalPatterns);
 
   if (
     gamemodeBases.length === 0
     && folderNamePatterns.length === 0
     && manifestPatterns.length === 0
+    && fileNamePatterns.length === 0
+    && globalNames.length === 0
+    && globalPatterns.length === 0
   ) {
     throw new Error('detection requires at least one signal');
   }
@@ -93,7 +112,17 @@ function normalizeDetection(value: unknown): GeneratedPluginIndexEntry['detectio
     ...(gamemodeBases.length > 0 ? { gamemodeBases } : {}),
     ...(folderNamePatterns.length > 0 ? { folderNamePatterns } : {}),
     ...(manifestPatterns.length > 0 ? { manifestPatterns } : {}),
+    ...(fileNamePatterns.length > 0 ? { fileNamePatterns } : {}),
+    ...(globalNames.length > 0 ? { globalNames } : {}),
+    ...(globalPatterns.length > 0 ? { globalPatterns } : {}),
   };
+}
+
+function normalizePluginKind(value: unknown): string | undefined {
+  const kind = asString(value)?.toLowerCase();
+  if (!kind) return undefined;
+  if (VALID_PLUGIN_KINDS.has(kind)) return kind;
+  throw new Error(`Unsupported plugin kind: ${kind}`);
 }
 
 export function loadSourcePluginBundles(pluginRoot: string): SourcePluginBundle[] {
@@ -149,6 +178,7 @@ export function loadSourcePluginBundles(pluginRoot: string): SourcePluginBundle[
         id,
         label,
         description: asString(manifest.description) ?? '',
+        kind: normalizePluginKind(manifest.kind),
         detection,
         gluarcPath,
         annotationsPath,
@@ -181,6 +211,7 @@ export function buildPluginIndex(
       id: bundle.id,
       label: bundle.manifest.label,
       description: bundle.manifest.description ?? '',
+      ...(bundle.manifest.kind ? { kind: bundle.manifest.kind } : {}),
       detection: bundle.manifest.detection,
       artifact: {
         branch: `${branchPrefix}${bundle.id}`,

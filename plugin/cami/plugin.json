@@ -1,0 +1,19 @@
+{
+  "id": "cami",
+  "label": "CAMI",
+  "kind": "library",
+  "description": "Common Admin Mod Interface compatibility plugin",
+  "detection": {
+    "folderNamePatterns": [
+      "(?:^|[\\\\/_-])cami(?:[\\\\/_\\.-]|$)"
+    ],
+    "fileNamePatterns": [
+      "(?:^|[\\\\/_-])cami(?:[\\\\/_\\.-]|$)"
+    ],
+    "globalNames": [
+      "CAMI"
+    ]
+  },
+  "gluarcPath": "gluarc.json",
+  "annotationsPath": "annotations"
+}

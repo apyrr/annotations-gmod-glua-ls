@@ -4,7 +4,7 @@ import path from 'path';
 describe('custom and plugin annotation smoke checks', () => {
   test('darkrp plugin annotation files exist and are scoped', () => {
     const darkrpLua = path.join(process.cwd(), 'plugin', 'darkrp', 'annotations', 'darkrp.lua');
-    const camiLua = path.join(process.cwd(), 'plugin', 'darkrp', 'annotations', 'cami.lua');
+    const camiLua = path.join(process.cwd(), 'plugin', 'cami', 'annotations', 'cami.lua');
 
     expect(fs.existsSync(darkrpLua)).toBe(true);
     expect(fs.existsSync(camiLua)).toBe(true);

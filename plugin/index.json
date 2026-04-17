@@ -1,6 +1,27 @@
 {
   "plugins": [
     {
+      "id": "cami",
+      "label": "CAMI",
+      "description": "Common Admin Mod Interface compatibility plugin",
+      "kind": "library",
+      "detection": {
+        "folderNamePatterns": [
+          "(?:^|[\\\\/_-])cami(?:[\\\\/_\\.-]|$)"
+        ],
+        "fileNamePatterns": [
+          "(?:^|[\\\\/_-])cami(?:[\\\\/_\\.-]|$)"
+        ],
+        "globalNames": [
+          "CAMI"
+        ]
+      },
+      "artifact": {
+        "branch": "gluals-annotations-plugin-cami",
+        "manifest": "plugin.json"
+      }
+    },
+    {
       "id": "darkrp",
       "label": "DarkRP",
       "description": "DarkRP plugin metadata and optional annotation bundle",
