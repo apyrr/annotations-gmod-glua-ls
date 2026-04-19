@@ -1,0 +1,16 @@
+---Launches an asynchronous http request with the given parameters.
+---
+---This cannot send or receive multiple headers with the same name.
+---
+--- HTTP-requests that respond with a large body may return an `unsuccessful` error. Try using the `Range` header to download the file in chunks.
+---
+--- HTTP-requests to destinations on private networks (such as `192.168.0.1`, or `127.0.0.1`) won't work.
+--- To enable HTTP-requests to destinations on private networks use [Command Line Parameters](https://wiki.facepunch.com/gmod/Command_Line_Parameters) `-allowlocalhttp`. (Dedicated servers only)
+---@realm shared
+---@realm menu
+---@source https://wiki.facepunch.com/gmod/Global.HTTP
+---@overload fun(parameters: HTTPRequestWithParameters): boolean
+---@overload fun(parameters: HTTPRequestWithoutParameters): boolean
+---@param parameters HTTPRequest The request parameters. See Structures/HTTPRequest.
+---@return boolean # `true` if a request is queued, `false` if a request could not be queued. (i.e. When not giving a `table` or the game is ran with `-disablehttp`)
+function _G.HTTP(parameters) end
