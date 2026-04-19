@@ -1,5 +1,5 @@
 import { ClassFunction, Enum, Function, HookFunction, LibraryFunction, TypePage, Panel, PanelFunction, Realm, Struct, WikiPage, isPanel, FunctionArgument, FunctionCallback } from '../scrapers/wiki-page-markup-scraper.js';
-import { escapeSingleQuotes, indentText, wrapInComment, removeNewlines, safeFileName, toLowerCamelCase } from '../utils/string.js';
+import { indentText, wrapInComment, removeNewlines, safeFileName, toLowerCamelCase } from '../utils/string.js';
 import {
   isClassFunction,
   isHookFunction,
@@ -95,6 +95,20 @@ export class GluaApiWriter {
     this.pageOverrides.set(safeFileName(pageAddress, '.'), override);
   }
 
+  private injectClassFieldsIntoOverride(override: string, className: string, classFields: string) {
+    if (!classFields)
+      return override.replace(/\n$/g, '');
+
+    const trimmedOverride = override.replace(/\n$/g, '');
+    const trimmedFields = classFields.replace(/\n+$/g, '');
+    const classValuePattern = new RegExp(`(^(?:local\\s+)?${className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=\\s*\\{\\})`, 'm');
+
+    if (!classValuePattern.test(trimmedOverride))
+      return `${trimmedOverride}\n${trimmedFields}`;
+
+    return trimmedOverride.replace(classValuePattern, `${trimmedFields}\n\n$1`);
+  }
+
   /**
    * Checks if a class name has aliases that should be generated.
    */
@@ -167,7 +181,7 @@ export class GluaApiWriter {
   }
 
   // Remove debug logging
-  private writeClassStart(className: string, realm?: Realm, url?: string, parent?: string, deprecated?: string, description?: string) {
+  private writeClassStart(className: string, realm?: Realm, url?: string, parent?: string, deprecated?: string, description?: string, classFields: string = '') {
     let api: string = '';
 
     // Resolve class name to canonical form
@@ -177,7 +191,7 @@ export class GluaApiWriter {
     if (!this.writtenClasses.has(canonicalClassName)) {
       const classOverride = `class.${canonicalClassName}`;
       if (this.pageOverrides.has(classOverride)) {
-        api += this.pageOverrides.get(classOverride)!.replace(/\n$/g, '') + '\n\n';
+        api += this.injectClassFieldsIntoOverride(this.pageOverrides.get(classOverride)!, canonicalClassName, classFields) + '\n\n';
       } else {
         api += description ? `${wrapInComment(description, false)}\n` : '';
         api += this.writeRealmAnnotations(realm);
@@ -192,6 +206,11 @@ export class GluaApiWriter {
           api += ` : ${parent}`;
 
         api += '\n';
+
+        if (classFields) {
+          api += classFields.replace(/\n+$/g, '') + '\n';
+          api += '\n';
+        }
 
         // for PLAYER, WEAPON, etc. we want to define globals
         if (canonicalClassName !== canonicalClassName.toUpperCase()) api += 'local ';
@@ -402,32 +421,29 @@ export class GluaApiWriter {
     return api;
   }
 
-  private writeType(type: string, value: any) {
-    if (type === 'string')
-      return `'${escapeSingleQuotes(value)}'`;
+  private writeStructField(field: Struct['fields'][number]) {
+    let api = '';
 
-    if (type === 'Vector')
-      return `Vector${value}`;
+    if (field.deprecated)
+      api += `---@deprecated ${removeNewlines(field.deprecated)}\n`;
 
-    return value;
+    const comment = field.default !== undefined
+      ? `${field.description ? `${field.description}\n\n` : ''}Default: \`${field.default}\``
+      : field.description;
+
+    if (comment)
+      api += `---${wrapInComment(comment)}\n`;
+
+    const type = GluaApiWriter.transformType(field.type, field.callback);
+    const optional = field.default !== undefined ? '?' : '';
+    api += `---@field ${GluaApiWriter.safeName(field.name)}${optional} ${type}\n`;
+
+    return api;
   }
 
   private writeStruct(struct: Struct) {
-    let api: string = this.writeClassStart(struct.name, struct.realm, struct.url, undefined, struct.deprecated, struct.description);
-
-    for (const field of struct.fields) {
-      if (field.deprecated)
-        api += `---@deprecated ${removeNewlines(field.deprecated)}\n`;
-
-      api += `---${wrapInComment(field.description)}\n`;
-
-      const type = GluaApiWriter.transformType(field.type, field.callback);
-      const optional = field.default ? '?' : '';
-      api += `---@type ${type}${optional}\n`;
-      api += `${struct.name}.${GluaApiWriter.safeName(field.name)} = ${field.default ? this.writeType(type, field.default) : 'nil'}\n\n`;
-    }
-
-    return api;
+    const classFields = struct.fields.map(field => this.writeStructField(field)).join('');
+    return this.writeClassStart(struct.name, struct.realm, struct.url, undefined, struct.deprecated, struct.description, classFields);
   }
 
   public writePages(pages: WikiPage[], filePath: string, index: number = 0) {

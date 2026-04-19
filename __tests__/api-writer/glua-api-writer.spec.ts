@@ -64,7 +64,33 @@ describe('GLua API Writer', () => {
     const api = writer.makeApiFromPages(writer.getPages(mockFilePath));
     expect(api).toContain('---@source https://wiki.facepunch.com/gmod/Custom_Entity_Fields');
     expect(api).toContain('---@class (partial) Custom_Entity_Fields');
-    expect(api).toContain('Custom_Entity_Fields = {}');
+    expect(api).toContain('---@field GetEntityDriveMode function');
+    expect(api).toContain('local Custom_Entity_Fields = {}');
+  });
+
+  it('should emit struct defaults as optional fields with default comments', () => {
+    const writer = new GluaApiWriter();
+    const api = writer.writePage(<WikiPage>{
+      type: 'struct',
+      name: 'TestStruct',
+      address: 'TestStruct',
+      description: 'Struct description.',
+      realm: 'shared',
+      fields: [
+        {
+          name: 'method',
+          type: 'string',
+          description: 'HTTP method.',
+          default: 'GET',
+        },
+      ],
+      url: 'https://wiki.facepunch.com/gmod/Structures/TestStruct',
+    });
+
+    expect(api).toContain('---@class (partial) TestStruct');
+    expect(api).toContain('--- Default: `GET`');
+    expect(api).toContain('---@field method? string');
+    expect(api).toContain('local TestStruct = {}');
   });
 
   it('should be able to write Lua API definitions directly from wiki json data for a fake enum', async () => {
@@ -254,6 +280,7 @@ describe('GLua API Writer', () => {
     const api = writer.makeApiFromPages(writer.getPages(mockFilePath));
 
     expect(api).toMatch(new RegExp(`^${overrideStart}`));
+    expect(api).toContain('---@field GetEntityDriveMode function');
   });
 
   it('should create aliasses for global enumerations', () => {
