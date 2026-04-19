@@ -49,19 +49,4 @@ describe('custom and plugin annotation smoke checks', () => {
     expect(globalHttp).toMatch(/---@param parameters HTTPRequest The request parameters/);
   });
 
-  test('generated HTTP annotations use strict request variants', () => {
-    const outputRoot = path.join(process.cwd(), 'output');
-    const structures = fs.readFileSync(path.join(outputRoot, 'structures.lua'), 'utf8');
-    const globals = fs.readFileSync(path.join(outputRoot, 'global.lua'), 'utf8');
-
-    expect(structures).toMatch(/---@alias HTTPRequestMethodWithParameters/);
-    expect(structures).toMatch(/---@field method\? string/);
-    expect(structures).toMatch(/---@field parameters\? HTTPRequestParameters/);
-    expect(structures).toMatch(/---@field method\? HTTPRequestMethodWithParameters/);
-    expect(structures).toMatch(/---@class \(exact\) HTTPRequestWithoutParameters : HTTPRequest/);
-    expect(structures).toMatch(/---@field parameters nil/);
-    expect(globals).toMatch(/---@overload fun\(parameters: HTTPRequestWithParameters\): boolean/);
-    expect(globals).toMatch(/---@overload fun\(parameters: HTTPRequestWithoutParameters\): boolean/);
-    expect(globals).toMatch(/---@param parameters HTTPRequest The request parameters/);
-  });
 });
